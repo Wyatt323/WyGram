@@ -14,6 +14,9 @@ jobs:
   build:
     runs-on: macos-26-intel
     timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
     env:
       UPSTREAM_COMMIT: cf8b23beaaac4126a396337ac2d5be13f9f76b66
     steps:
@@ -41,6 +44,18 @@ jobs:
           git -C "$SOURCE_DIR" apply --check "$GITHUB_WORKSPACE/WyGram-1.0.0.patch"
           git -C "$SOURCE_DIR" apply "$GITHUB_WORKSPACE/WyGram-1.0.0.patch"
           git -C "$SOURCE_DIR" submodule update --init --recursive --depth 1 --jobs 4
+
+      - name: Use verified Intel Bazel checksum
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          target = pathlib.Path(os.environ['SOURCE_DIR']) / 'versions.json'
+          versions = json.loads(target.read_text())
+          assert versions['bazel'] == '8.4.2:45e9388abf21d1107e146ea366ad080eb93cb6a5f3a4a3b048f78de0bc3faffa'
+          # Official bazelbuild/bazel 8.4.2 darwin-x86_64 release SHA-256.
+          versions['bazel'] = '8.4.2:ce73346274c379f77880db8bd8b9c8569885fe56f19386173760949da9078df0'
+          target.write_text(json.dumps(versions, indent=4) + '\n')
+          PY
 
       - name: Allow unsigned device bundles in pinned Apple rules
         run: |
