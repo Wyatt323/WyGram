@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 360
     env:
       UPSTREAM_COMMIT: cf8b23beaaac4126a396337ac2d5be13f9f76b66
@@ -28,7 +28,8 @@ jobs:
           test -d /Applications/Xcode_26.2.app
           sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
           xcodebuild -version
-          test "$(uname -m)" = arm64
+          test "$(uname -m)" = x86_64
+          sysctl -n hw.memsize
           df -h .
 
       - name: Fetch pinned source and apply WyGram changes
@@ -75,20 +76,38 @@ jobs:
           target.write_text(json.dumps(config), encoding='utf-8')
           target.chmod(0o600)
           with (source / '.bazelrc').open('a') as output:
-              output.write('\nbuild --jobs=2\n')
+              output.write('\nstartup --host_jvm_args=-Xmx2048m\n'
+                           'build --jobs=2\n'
+                           'build --discard_analysis_cache\n'
+                           'build:macos --strategy=SwiftCompile=standalone\n')
           PY
 
       - name: Compile unsigned arm64 IPA
         run: |
           cd "$SOURCE_DIR"
-          python3 -u build-system/Make/Make.py \
-            --bazelUserRoot="$RUNNER_TEMP/wygram-bazel" \
-            build \
-            --configurationPath=build-system/wygram.local.json \
-            --xcodeManagedCodesigning \
-            --unsigned \
-            --configuration=release_arm64 \
-            --buildNumber="$GITHUB_RUN_NUMBER"
+          for attempt in 1 2; do
+            if python3 -u build-system/Make/Make.py \
+              --bazelUserRoot="$RUNNER_TEMP/wygram-bazel" \
+              build \
+              --configurationPath=build-system/wygram.local.json \
+              --xcodeManagedCodesigning \
+              --unsigned \
+              --configuration=release_arm64 \
+              --buildNumber="$GITHUB_RUN_NUMBER" 2>&1 | tee "$RUNNER_TEMP/wygram-build.log"; then
+              exit 0
+            fi
+            if [ "$attempt" = 2 ]; then
+              exit 1
+            fi
+            python3 - <<'PY'
+          import os, pathlib
+          log = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'wygram-build.log').read_text(errors='replace').lower()
+          if 'out of memory' not in log and 'outofmemory' not in log:
+              raise SystemExit('Build failed for a reason other than memory pressure; inspect the compiler log.')
+          PY
+            echo 'build --jobs=1' >> .bazelrc
+            echo 'Retrying with one build job and the existing local build outputs.'
+          done
 
       - name: Verify and collect IPA
         run: |
