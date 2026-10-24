@@ -1,0 +1,130 @@
+name: Build WyGram IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wygram-ipa
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 360
+    env:
+      SOURCE_DIR: ${{ runner.temp }}/wygram-source
+      UPSTREAM_COMMIT: cf8b23beaaac4126a396337ac2d5be13f9f76b66
+    steps:
+      - name: Check out build recipe
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode 26.2
+        run: |
+          test -d /Applications/Xcode_26.2.app
+          sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
+          xcodebuild -version
+          test "$(uname -m)" = arm64
+          df -h .
+
+      - name: Fetch pinned source and apply WyGram changes
+        run: |
+          git init "$SOURCE_DIR"
+          git -C "$SOURCE_DIR" remote add origin https://github.com/Swiftgram/Telegram-iOS.git
+          git -C "$SOURCE_DIR" fetch --depth 1 origin "$UPSTREAM_COMMIT"
+          git -C "$SOURCE_DIR" checkout --detach FETCH_HEAD
+          git -C "$SOURCE_DIR" apply --check "$GITHUB_WORKSPACE/WyGram-1.0.0.patch"
+          git -C "$SOURCE_DIR" apply "$GITHUB_WORKSPACE/WyGram-1.0.0.patch"
+          git -C "$SOURCE_DIR" submodule update --init --recursive --depth 1 --jobs 4
+
+      - name: Create temporary API configuration
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          api_id = os.environ.get('TG_API_ID', '')
+          api_hash = os.environ.get('TG_API_HASH', '')
+          if not api_id.isdigit() or not re.fullmatch(r'[0-9a-fA-F]{32}', api_hash):
+              raise SystemExit('Set valid TG_API_ID and TG_API_HASH repository secrets before running.')
+          source = pathlib.Path(os.environ['SOURCE_DIR'])
+          template = source / 'build-system/template_minimal_development_configuration.json'
+          config = json.loads(template.read_text())
+          config.update(api_id=api_id, api_hash=api_hash, bundle_id='app.wygram.ios',
+                        team_id='WYGRAM0000', is_internal_build='false', is_appstore_build='false')
+          target = source / 'build-system/wygram.local.json'
+          target.write_text(json.dumps(config), encoding='utf-8')
+          target.chmod(0o600)
+          with (source / '.bazelrc').open('a') as output:
+              output.write('\nbuild --jobs=2\n')
+          PY
+
+      - name: Compile unsigned arm64 IPA
+        run: |
+          cd "$SOURCE_DIR"
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$RUNNER_TEMP/wygram-bazel" \
+            build \
+            --configurationPath=build-system/wygram.local.json \
+            --xcodeManagedCodesigning \
+            --unsigned \
+            --configuration=release_arm64 \
+            --buildNumber="$GITHUB_RUN_NUMBER"
+
+      - name: Verify and collect IPA
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, pathlib, plistlib, shutil, struct, zipfile
+          source = pathlib.Path(os.environ['SOURCE_DIR'])
+          ipa = source / 'bazel-bin/Telegram/WyGram.ipa'
+          if not ipa.is_file():
+              raise SystemExit('The build did not produce WyGram.ipa.')
+          with zipfile.ZipFile(ipa) as archive:
+              main = [name for name in archive.namelist()
+                      if name.startswith('Payload/') and name.endswith('.app/Info.plist') and name.count('/') == 2]
+              if len(main) != 1:
+                  raise SystemExit('Expected one main app in the IPA.')
+              info = plistlib.loads(archive.read(main[0]))
+              assert info['CFBundleDisplayName'] == 'WyGram', 'App name mismatch'
+              assert info['CFBundleShortVersionString'] == '1.0.0', 'Version mismatch'
+              assert info['CFBundleIdentifier'] == 'app.wygram.ios', 'Bundle ID mismatch'
+              app_path = main[0].rsplit('/', 1)[0]
+              with archive.open(app_path + '/' + info['CFBundleExecutable']) as executable:
+                  magic, cpu = struct.unpack('<II', executable.read(8))
+              assert magic == 0xFEEDFACF and cpu == 0x0100000C, 'Expected an arm64 device binary'
+          output = pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'artifacts'
+          output.mkdir(exist_ok=True)
+          target = output / 'WyGram-1.0.0-unsigned.ipa'
+          shutil.copy2(ipa, target)
+          digest = hashlib.file_digest(target.open('rb'), 'sha256').hexdigest()
+          (output / 'SHA256SUMS.txt').write_text(f'{digest}  {target.name}\n')
+          (output / 'build-info.txt').write_text(
+              'WyGram 1.0.0, unsigned arm64 IPA\n'
+              f"Upstream commit: {os.environ['UPSTREAM_COMMIT']}\n"
+              f"Build number: {os.environ['GITHUB_RUN_NUMBER']}\n"
+              'Sign the IPA before installing.\n')
+          print('Verified WyGram 1.0.0 arm64 IPA.')
+          PY
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WyGram-1.0.0-unsigned
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove temporary API configuration
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          root = pathlib.Path(os.environ['SOURCE_DIR'])
+          for relative in ('build-system/wygram.local.json', 'build-input/configuration-repository/variables.bzl'):
+              (root / relative).unlink(missing_ok=True)
+          PY
