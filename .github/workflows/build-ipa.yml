@@ -15,7 +15,6 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 360
     env:
-      SOURCE_DIR: ${{ runner.temp }}/wygram-source
       UPSTREAM_COMMIT: cf8b23beaaac4126a396337ac2d5be13f9f76b66
     steps:
       - name: Check out build recipe
@@ -25,6 +24,7 @@ jobs:
 
       - name: Select Xcode 26.2
         run: |
+          echo "SOURCE_DIR=$RUNNER_TEMP/wygram-source" >> "$GITHUB_ENV"
           test -d /Applications/Xcode_26.2.app
           sudo xcode-select --switch /Applications/Xcode_26.2.app/Contents/Developer
           xcodebuild -version
