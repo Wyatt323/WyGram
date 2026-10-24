@@ -41,6 +41,20 @@ jobs:
           git -C "$SOURCE_DIR" apply "$GITHUB_WORKSPACE/WyGram-1.0.0.patch"
           git -C "$SOURCE_DIR" submodule update --init --recursive --depth 1 --jobs 4
 
+      - name: Allow unsigned device bundles in pinned Apple rules
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          target = pathlib.Path(os.environ['SOURCE_DIR']) / 'build-system/bazel-rules/rules_apple/apple/internal/ios_rules.bzl'
+          text = target.read_text()
+          old = ('    if platform_prerequisites.platform.is_device:\n'
+                 '        processor_partials.append(\n'
+                 '            partials.provisioning_profile_partial(')
+          new = old.replace('platform.is_device:', 'platform.is_device and "disable_legacy_signing" not in features:')
+          assert text.count(old) == 6, 'Pinned Apple rules changed; review unsigned bundle handling.'
+          target.write_text(text.replace(old, new))
+          PY
+
       - name: Create temporary API configuration
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
