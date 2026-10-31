@@ -19,3 +19,5 @@
 
 - Share inbox presentation continuously observes ready/unlocked/active state and waits for an attached root window. Keep bounded retries, cross-container oldest-first handling, explicit manual refresh and account-change cancellation. Never consume a pending batch merely because readiness or window attachment is delayed.
 - Direct-share setup chooses a vacant authorised common group, including a safe alternative for an old occupied request. Do not overwrite even empty existing stores. Native sharing requires the main app's positive shared-storage marker. Main and extension inbox discovery use the same actual signing-group intersection.
+
+- Shared-container startup must not recursively sweep unknown sibling directories. A vacant telegram-data slot does not establish ownership of the rest of an App Group; preserve other applications' files and use account-scoped cleanup only.

@@ -14,7 +14,8 @@ import SGAppGroupIdentifier
     }
     static func snapshot(_ url: URL) -> [String: Data] {
         var result: [String: Data] = [:]
-        for case let child as URL in FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey])! {
+        guard let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.isRegularFileKey]) else { return result }
+        for case let child as URL in enumerator {
             if (try? child.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true { result[String(child.path.dropFirst(url.path.count+1))] = try! Data(contentsOf: child) }
         }
         return result
@@ -125,6 +126,19 @@ import SGAppGroupIdentifier
             check("occupied-other-store-never-touched", snapshot(occupiedStore) == other)
         }
         do {
+            let (local, group, d) = try fixture("shared-container-other-app-files")
+            let other = group.url.appendingPathComponent("OtherApp/Documents")
+            try fm.createDirectory(at: other, withIntermediateDirectories: true)
+            try Data("OTHER APP FILE FIXTURE".utf8).write(to: other.appendingPathComponent("document.txt"))
+            let original = snapshot(other)
+            _ = WyGramDirectShare.request(group: group, defaults: d)
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [group], defaults: d)
+            check("unused-account-slot-with-other-files-can-be-selected", selected?.identifier == group.identifier)
+            performAppGroupUpgrades(appGroupPath: group.url.path, rootPath: group.url.appendingPathComponent("telegram-data").path)
+            Thread.sleep(forTimeInterval: 0.25)
+            check("startup-after-transition-preserves-other-app-files", snapshot(other) == original)
+        }
+        do {
             let (local, group, d) = try fixture("dangling-destination")
             let target = group.url.appendingPathComponent("telegram-data")
             try fm.createSymbolicLink(at: target, withDestinationURL: group.url.appendingPathComponent("missing"))
@@ -198,14 +212,11 @@ import SGAppGroupIdentifier
                 try Data(directory.utf8).write(to: base.appendingPathComponent(directory + "/fixture"))
             }
             performAppGroupUpgrades(appGroupPath: base.path, rootPath: base.appendingPathComponent("telegram-data").path)
-            for _ in 0..<200 {
-                if !fm.fileExists(atPath: base.appendingPathComponent("obsolete-legacy-data").path) { break }
-                Thread.sleep(forTimeInterval: 0.01)
-            }
+            Thread.sleep(forTimeInterval: 0.25)
             check("startup-cleanup-keeps-pending-share-inbox", fm.fileExists(atPath: base.appendingPathComponent("WyGramShareInbox/fixture").path))
             check("startup-cleanup-keeps-notification-bridge", fm.fileExists(atPath: base.appendingPathComponent("WyGramNotificationBridge/fixture").path))
             check("startup-cleanup-keeps-account-directory", fm.fileExists(atPath: base.appendingPathComponent("telegram-data/fixture").path))
-            check("startup-cleanup-still-removes-obsolete-directory", !fm.fileExists(atPath: base.appendingPathComponent("obsolete-legacy-data").path))
+            check("startup-preserves-unowned-sibling-directory", fm.fileExists(atPath: base.appendingPathComponent("obsolete-legacy-data/fixture").path))
         }
         let report: [String: Any] = ["passed": checks.allSatisfy { $0["passed"] as? Bool == true }, "checks": checks, "scope": "Exact production transition and ApplicationDataStorage code with constructed directories and a real SQLite fixture; not Telegram accounts, iOS entitlements or LCSign device validation."]
         let output = URL(fileURLWithPath: CommandLine.arguments[1])

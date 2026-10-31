@@ -267,27 +267,11 @@ public func performAppGroupUpgrades(appGroupPath: String, rootPath: String) {
     DispatchQueue.global(qos: .default).async {
         let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: rootPath), withIntermediateDirectories: true, attributes: nil)
 
-        if let items = FileManager.default.enumerator(at: URL(fileURLWithPath: appGroupPath), includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants], errorHandler: nil) {
-            let allowedDirectories: [String] = [
-                "telegram-data",
-                "Library",
-                // Active cross-process bridges are not obsolete account data.
-                // Removing them here loses pending shares on app/extension startup.
-                "WyGramShareInbox",
-                "WyGramNotificationBridge"
-            ]
+        // A signing provider can authorise several shared containers, and a
+        // newly selected container may also hold files owned by another app.
+        // Unknown siblings are not proof of obsolete account data. Never sweep
+        // them here; account storage has its own scoped cleanup mechanisms.
 
-            for url in items {
-                guard let url = url as? URL else {
-                    continue
-                }
-                if let isDirectory = try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory, isDirectory {
-                    if !allowedDirectories.contains(url.lastPathComponent) {
-                        let _ = try? FileManager.default.removeItem(at: url)
-                    }
-                }
-            }
-        }
     }
     
     do {
