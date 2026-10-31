@@ -125,6 +125,7 @@ private enum SGSliderSetting: String {
 }
 
 private enum SGDisclosureLink: String {
+    case wygramDirectShare
     case wygramPushStatus
     case wygramAppUpdate
     case wygramMessageHistory
@@ -153,6 +154,7 @@ private func SGControllerEntries(presentationData: PresentationData, callListSet
     let id = SGItemListCounter()
     
     entries.append(.searchInput(id: id.count, section: .search, title: NSAttributedString(string: "🔍"), text: state.searchQuery ?? "", placeholder: strings.Common_Search))
+    entries.append(.disclosure(id: id.count, section: .search, link: .wygramDirectShare, text: lang.hasPrefix("zh") ? "系统分享（直接选择收件人）" : "System Sharing (Choose Recipients)"))
     entries.append(.disclosure(id: id.count, section: .search, link: .wygramMessageHistory, text: lang.hasPrefix("zh") ? "消息记录（防撤回 / 防编辑 / 图片保留）" : "Message History (Deleted / Edited / Photos)"))
     entries.append(.disclosure(id: id.count, section: .search, link: .wygramAppUpdate, text: lang.hasPrefix("zh") ? "WyGram 在线更新" : "WyGram Updates"))
     entries.append(.disclosure(id: id.count, section: .search, link: .wygramPushStatus, text: lang.hasPrefix("zh") ? "消息通知状态" : "Message Notification Status"))
@@ -688,6 +690,8 @@ public func sgSettingsController(context: AccountContext/*, focusOnItemTag: Int?
         presentControllerImpl?(actionSheet, ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
     }, openDisclosureLink: { link in
         switch (link) {
+            case .wygramDirectShare:
+                pushControllerImpl?(wygramDirectShareController(context: context))
             case .wygramAppUpdate:
                 pushControllerImpl?(wygramAppUpdateController(context: context))
             case .wygramPushStatus:

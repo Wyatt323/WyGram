@@ -62,10 +62,27 @@ public struct WyGramShareInbox {
         }
     }
 
+    public func publishAccountStorage(group: URL?) {
+        let root = self.directory.deletingLastPathComponent().deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        self.publishStorage(shared: group.map { $0.resolvingSymlinksInPath().standardizedFileURL == root } ?? false)
+    }
+
+    // A container lookup in the extension alone does not establish that the
+    // main app reads this inbox. Prefer a directory it has actually prepared,
+    // including when re-signing makes a different App Group available first.
+    public static func preparedForImport(inboxes: [WyGramShareInbox]) -> WyGramShareInbox? {
+        return inboxes.first(where: { $0.storageMode != nil })
+    }
+
     public var mainUsesLocalStorage: Bool {
+        return self.storageMode == "local"
+    }
+
+    private var storageMode: String? {
         let url = self.directory.appendingPathComponent("storage-mode")
-        guard self.regularFile(url, maximumSize: 16), let data = try? Data(contentsOf: url) else { return false }
-        return data == Data("local".utf8)
+        guard self.regularFile(url, maximumSize: 16), let data = try? Data(contentsOf: url),
+              let mode = String(data: data, encoding: .utf8), ["shared", "local"].contains(mode) else { return nil }
+        return mode
     }
 
     public func prepare() throws {

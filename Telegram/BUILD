@@ -1030,8 +1030,20 @@ swift_library(
     ],
 )
 
+plist_fragment(
+    name = "ShareEntitlements",
+    extension = "entitlements",
+    template = """
+    <key>com.apple.security.application-groups</key>
+    <array><string>group.{telegram_bundle_id}</string></array>
+    <key>application-identifier</key>
+    <string>{telegram_team_id}.{telegram_bundle_id}.Share</string>
+    """.format(telegram_bundle_id = telegram_bundle_id, telegram_team_id = telegram_team_id),
+)
+
 ios_extension(
     name = "ShareExtension",
+    entitlements = ":ShareEntitlements.entitlements",
     bundle_id = "{telegram_bundle_id}.Share".format(
         telegram_bundle_id = telegram_bundle_id,
     ),

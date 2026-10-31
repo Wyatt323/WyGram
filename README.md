@@ -1,10 +1,10 @@
-# WyGram 1.0.14
+# WyGram 1.1.0
 
 WyGram is an iOS Telegram client based on [Swiftgram/Telegram-iOS](https://github.com/Swiftgram/Telegram-iOS). Its fixed application icon, internal branding and top badge use the artwork supplied for WyGram.
 
 The Swiftgram client-side Pro settings are available without a purchase in this fork. Telegram Premium and any feature enforced by Telegram or Swiftgram servers are outside this change. See [WYGRAM.md](WYGRAM.md) for build requirements and testing notes.
 
-Download the current IPA from [Releases](https://github.com/Wyatt323/WyGram/releases/latest). Version 1.0.14 (21) keeps Repeat Message and adds Forward to This Chat beside it: both send exactly the pressed message to the current chat/topic; the new action keeps normal forward attribution. On-device signed updates are available from 1.0.12: install the first updater-enabled version manually with LCSign, then configure the same certificate and matching profiles on the phone. See [online updates](docs/wygram-online-updates.md).
+Download the current IPA from [Releases](https://github.com/Wyatt323/WyGram/releases/latest). Version 1.1.0 (22) keeps Repeat Message and adds Forward to This Chat beside it: both send exactly the pressed message to the current chat/topic; the new action keeps normal forward attribution. On-device signed updates are available from 1.0.12: install the first updater-enabled version manually with LCSign, then configure the same certificate and matching profiles on the phone. See [online updates](docs/wygram-online-updates.md).
 
 For the current local build and release recipe, see [Build WyGram](docs/wygram-build.md). The instructions below retain the upstream compilation guide.
 

@@ -270,7 +270,11 @@ public func performAppGroupUpgrades(appGroupPath: String, rootPath: String) {
         if let items = FileManager.default.enumerator(at: URL(fileURLWithPath: appGroupPath), includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants], errorHandler: nil) {
             let allowedDirectories: [String] = [
                 "telegram-data",
-                "Library"
+                "Library",
+                // Active cross-process bridges are not obsolete account data.
+                // Removing them here loses pending shares on app/extension startup.
+                "WyGramShareInbox",
+                "WyGramNotificationBridge"
             ]
 
             for url in items {

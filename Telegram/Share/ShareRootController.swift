@@ -59,14 +59,11 @@ class ShareRootController: UIViewController {
             
             let languagesCategory = "ios"
             
-            let appGroupName = "group.\(baseAppBundleId)"
-            let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
-            
-            guard let appGroupUrl = maybeAppGroupUrl,
-                  WyGramShareInbox.canUseSharedAccount(group: appGroupUrl, inboxes: WyGramShareInbox.current()) else {
+            guard let group = WyGramDirectShare.sharedAccountGroup() else {
                 self.showFallback()
                 return
             }
+            let appGroupUrl = group.url
             
             let rootPath = appGroupUrl.path + "/telegram-data"
             
@@ -124,11 +121,8 @@ class ShareRootController: UIViewController {
         self.impl?.stop()
         self.impl = nil
         let providers = (self.extensionContext?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
-        let controller = WyGramShareFallbackController(inbox: WyGramShareInbox.current().first, providers: providers, finish: { [weak self] in
+        let controller = WyGramShareFallbackController(inbox: WyGramShareInbox.preparedForImport(inboxes: WyGramShareInbox.current()), providers: providers, finish: { [weak self] in
             self?.extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
-        }, openApp: { [weak self] completion in
-            guard let self, let url = URL(string: "wygram://share-inbox") else { completion(false); return }
-            self.extensionContext?.open(url, completionHandler: completion)
         })
         self.fallback = controller
         self.addChild(controller)

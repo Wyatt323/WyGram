@@ -1,4 +1,5 @@
 import Foundation
+import SGAppGroupIdentifier
 
 struct ApplicationDataStorage {
     static let selectionKey = "wygram.applicationDataStorage"
@@ -22,13 +23,16 @@ struct ApplicationDataStorage {
 
     static func resolve(bundleIdentifier: String) throws -> ApplicationDataStorage {
         let fileManager = FileManager.default
-        let groupIdentifier = "group.\(bundleIdentifier)"
-        let sharedDirectory = fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
         let supportDirectory = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let localDirectory = supportDirectory.appendingPathComponent("WyGram", isDirectory: true)
+        let groups = WyGramDirectShare.availableGroups()
+        let transitioned = try WyGramDirectShare.performRequestedTransition(localDirectory: localDirectory, groups: groups)
+        let groupIdentifier = transitioned?.identifier ?? UserDefaults.standard.string(forKey: WyGramDirectShare.groupKey) ?? "group.\(bundleIdentifier)"
+        let sharedDirectory = transitioned?.url ?? fileManager.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier)
         return try self.resolve(
             sharedDirectory: sharedDirectory,
             sharedGroupIdentifier: groupIdentifier,
-            localDirectory: supportDirectory.appendingPathComponent("WyGram", isDirectory: true),
+            localDirectory: localDirectory,
             defaults: .standard,
             fileManager: fileManager
         )
@@ -48,6 +52,7 @@ struct ApplicationDataStorage {
             do {
                 try self.prepare(directory: sharedDirectory, fileManager: fileManager)
                 defaults.set("shared", forKey: self.selectionKey)
+                defaults.set(sharedGroupIdentifier, forKey: WyGramDirectShare.groupKey)
                 return ApplicationDataStorage(baseURL: sharedDirectory, sharedGroupIdentifier: sharedGroupIdentifier)
             } catch {
                 if previousSelection == "shared" {

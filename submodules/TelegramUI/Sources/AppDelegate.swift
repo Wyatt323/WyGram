@@ -497,7 +497,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         do {
             dataStorage = try ApplicationDataStorage.resolve(bundleIdentifier: Bundle.main.bundleIdentifier!)
             self.applicationDataStorage = dataStorage
-            for inbox in WyGramShareInbox.current() { inbox.publishStorage(shared: dataStorage.sharedGroupIdentifier != nil) }
+            for inbox in WyGramShareInbox.current() { inbox.publishAccountStorage(group: dataStorage.sharedGroupIdentifier == nil ? nil : dataStorage.baseURL) }
             let logsRootPath = rootPathForBasePath(dataStorage.baseURL.path)
             let logsPath = logsRootPath + SGLogger.sgLogsPath
             try FileManager.default.createDirectory(atPath: logsPath, withIntermediateDirectories: true)
@@ -2088,6 +2088,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         self.isInForegroundPromise.set(true)
         self.isActiveValue = true
         self.isActivePromise.set(true)
+        if let dataStorage = self.applicationDataStorage {
+            for inbox in WyGramShareInbox.current() { inbox.publishAccountStorage(group: dataStorage.sharedGroupIdentifier == nil ? nil : dataStorage.baseURL) }
+        }
         self.foregroundConnectionRecovery.activate(account: self.contextValue?.context.account)
         if let context = self.contextValue { self.shareInboxPresenter.check(context: context); self.updatePresenter.activate(context: context) }
 

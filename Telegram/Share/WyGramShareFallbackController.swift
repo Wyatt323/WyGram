@@ -8,7 +8,6 @@ final class WyGramShareFallbackController: UIViewController {
     private let inbox: WyGramShareInbox?
     private let providers: [NSItemProvider]
     private let finish: () -> Void
-    private let openApp: (@escaping (Bool) -> Void) -> Void
     private let queue = DispatchQueue(label: "WyGram.ShareImport")
     private let queueKey = DispatchSpecificKey<Bool>()
     private let id = UUID().uuidString
@@ -16,16 +15,17 @@ final class WyGramShareFallbackController: UIViewController {
     private var progress: Progress?
     private var timeout: DispatchWorkItem?
     private var stopped = false
+    private var finished = false
     private var published = false
     private let label = UILabel()
     private let button = UIButton(type: .system)
+    private let cancelButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .medium)
 
-    init(inbox: WyGramShareInbox?, providers: [NSItemProvider], finish: @escaping () -> Void, openApp: @escaping (@escaping (Bool) -> Void) -> Void) {
+    init(inbox: WyGramShareInbox?, providers: [NSItemProvider], finish: @escaping () -> Void) {
         self.inbox = inbox
         self.providers = providers
         self.finish = finish
-        self.openApp = openApp
         super.init(nibName: nil, bundle: nil)
         self.queue.setSpecific(key: self.queueKey, value: true)
     }
@@ -42,13 +42,12 @@ final class WyGramShareFallbackController: UIViewController {
         self.label.numberOfLines = 0
         self.label.textAlignment = .center
         self.label.font = .preferredFont(forTextStyle: .body)
-        self.button.setTitle("在 WyGram 中继续", for: .normal)
-        self.button.addTarget(self, action: #selector(continueInApp), for: .touchUpInside)
+        self.button.setTitle("完成，手动打开 WyGram", for: .normal)
+        self.button.addTarget(self, action: #selector(completeImport), for: .touchUpInside)
         self.button.isHidden = true
-        let cancel = UIButton(type: .system)
-        cancel.setTitle("取消", for: .normal)
-        cancel.addTarget(self, action: #selector(self.cancel), for: .touchUpInside)
-        let stack = UIStackView(arrangedSubviews: [title, self.label, self.spinner, self.button, cancel])
+        self.cancelButton.setTitle("取消分享", for: .normal)
+        self.cancelButton.addTarget(self, action: #selector(self.cancel), for: .touchUpInside)
+        let stack = UIStackView(arrangedSubviews: [title, self.label, self.spinner, self.button, self.cancelButton])
         stack.axis = .vertical
         stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -59,7 +58,7 @@ final class WyGramShareFallbackController: UIViewController {
             stack.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor, constant: -28)
         ])
         guard let inbox = self.inbox else {
-            self.label.text = "当前签名未提供 WyGram 与分享扩展可共同访问的 App Group，系统分享无法读取登录账号或传递文件。\n\n请关闭此面板，在 WyGram 聊天中通过“附件 → 文件”添加。签名时需为主应用及 Share 扩展保留同一个 App Group 权限。"
+            self.label.text = "尚未连接到 WyGram 的文件接收目录。请先手动打开一次 WyGram，再返回重试分享。\n\n若仍出现此提示，请在 WyGram 聊天中通过“附件 → 文件”添加。签名时需为主应用及 Share 扩展保留同一个可用的 App Group 权限。"
             return
         }
         guard !self.providers.isEmpty, self.providers.count <= WyGramShareInbox.maximumItems else {
@@ -85,7 +84,7 @@ final class WyGramShareFallbackController: UIViewController {
                 self.published = true
                 DispatchQueue.main.async { [weak self] in
                     self?.spinner.stopAnimating()
-                    self?.label.text = "文件已准备好。请在 WyGram 中选择聊天并确认发送。\n\n如果无法自动打开，请关闭分享面板后手动打开 WyGram；待发送文件保留一小时。"
+                    self?.label.text = "文件已准备好。点击下方“完成”关闭此面板，然后手动打开 WyGram，选择聊天并确认发送。\n\n文件保留一小时，尚未发送；“取消分享”会删除本次待发送文件。"
                     self?.button.isHidden = false
                 }
             } catch { self.fail(inbox: inbox) }
@@ -131,25 +130,35 @@ final class WyGramShareFallbackController: UIViewController {
         inbox.remove(id: self.id)
         DispatchQueue.main.async { [weak self] in
             self?.spinner.stopAnimating()
+            self?.button.isHidden = true
             self?.label.text = "无法读取所选文件，可能尚未从 iCloud 下载、文件权限不足或总大小超过 2 GB。\n\n请在“文件”中下载完成后重试，或在 WyGram 聊天中通过“附件 → 文件”添加。"
         }
     }
 
-    @objc private func continueInApp() {
+    @objc private func completeImport() {
         self.button.isEnabled = false
-        self.openApp { [weak self] opened in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.button.isEnabled = true
-                if opened { self.finish() }
-                else { self.label.text = "系统未允许从分享扩展打开应用。请关闭此面板后手动打开 WyGram，继续选择聊天并确认发送。" }
+        self.cancelButton.isEnabled = false
+        self.queue.async { [weak self] in
+            guard let self, !self.stopped, !self.finished else { return }
+            guard self.published, let inbox = self.inbox,
+                  inbox.pending().contains(where: { $0.id == self.id }) else {
+                if let inbox = self.inbox { self.fail(inbox: inbox) }
+                DispatchQueue.main.async { self.cancelButton.isEnabled = true }
+                return
             }
+            // Closing successfully must keep the published batch. iOS Share
+            // extensions cannot rely on opening their containing application.
+            self.stopped = true
+            self.finished = true
+            self.timeout?.cancel()
+            DispatchQueue.main.async { self.finish() }
         }
     }
 
     @objc private func cancel() {
         self.queue.async { [weak self] in
-            guard let self else { return }
+            guard let self, !self.finished else { return }
+            self.finished = true
             self.stopped = true
             self.timeout?.cancel()
             self.progress?.cancel()
