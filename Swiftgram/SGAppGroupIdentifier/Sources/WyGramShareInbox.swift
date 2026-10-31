@@ -49,7 +49,7 @@ public struct WyGramShareInbox {
         // inaccessible/stale account store. The main app prepares this file.
         return inboxes.contains { inbox in
             guard let location = inbox.sharedAccountLocation,
-                  location.accountURL.standardizedFileURL.path == group.standardizedFileURL.path else { return false }
+                  location.accountURL.path == group.resolvingSymlinksInPath().standardizedFileURL.path else { return false }
             return WyGramDirectShare.usableAccount(location)
         }
     }
@@ -64,8 +64,8 @@ public struct WyGramShareInbox {
     }
 
     public func publishAccountStorage(group: URL?) {
-        let root = self.directory.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL
-        guard let group = group?.standardizedFileURL else { self.publishStorage(shared: false); return }
+        let root = self.directory.deletingLastPathComponent().deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
+        guard let group = group?.resolvingSymlinksInPath().standardizedFileURL else { self.publishStorage(shared: false); return }
         if group.path == root.path { self.publishStorage(shared: true); return }
         let prefix = root.path + "/"
         guard group.path.hasPrefix(prefix) else { self.publishStorage(shared: false); return }

@@ -8,6 +8,7 @@ public enum WyGramDirectShare {
     public static let requestKey = "wygram.directShare.request"
     public static let requestPathKey = "wygram.directShare.request.path"
     public static let resultKey = "wygram.directShare.result"
+    public static let failureKey = "wygram.directShare.failure"
     static let journalName = ".wygram-direct-share-transition.json"
 
     public struct Group {
@@ -16,7 +17,11 @@ public enum WyGramDirectShare {
         public let accountRelativePath: String?
         public var accountURL: URL { self.accountRelativePath.map { self.url.appendingPathComponent($0, isDirectory: true) } ?? self.url }
         public init(identifier: String, url: URL, accountRelativePath: String? = nil) {
-            self.identifier = identifier; self.url = url; self.accountRelativePath = accountRelativePath
+            self.identifier = identifier
+            // Only the OS-provided container root may be an alias. Account
+            // namespace/store children are still checked without following links.
+            self.url = url.resolvingSymlinksInPath().standardizedFileURL
+            self.accountRelativePath = accountRelativePath
         }
     }
 
@@ -28,11 +33,64 @@ public enum WyGramDirectShare {
         return parts.count == 2 && parts[0] == "WyGramAccounts" && UUID(uuidString: String(parts[1]))?.uuidString == String(parts[1])
     }
 
-    public static func setupGroups(_ groups: [Group]) -> [Group] {
-        return groups.compactMap { group in
+    public struct SetupCheck {
+        public let group: Group
+        public let stage: String
+        public let code: Int32
+        public var available: Bool { self.stage == "ready" }
+        public var diagnostic: String { "\(self.stage)(\(self.code))" }
+    }
+
+    public static func setupChecks(_ groups: [Group]) -> [SetupCheck] {
+        return groups.map { group in
             let candidate = Group(identifier: group.identifier, url: group.url, accountRelativePath: "WyGramAccounts/" + UUID().uuidString)
-            return self.vacantGroups([candidate]).first
+            return self.checkSetup(candidate)
         }
+    }
+
+    public static func setupGroups(_ groups: [Group]) -> [Group] {
+        return self.setupChecks(groups).filter { $0.available }.map { $0.group }
+    }
+
+    private static func checkSetup(_ group: Group) -> SetupCheck {
+        func result(_ stage: String, _ code: Int32) -> SetupCheck { SetupCheck(group: group, stage: stage, code: code) }
+        var value = stat()
+        guard lstat(group.url.path, &value) == 0 else { return result("container-stat", errno) }
+        guard value.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return result("container-type", ENOTDIR) }
+        let namespace = group.url.appendingPathComponent("WyGramAccounts", isDirectory: true)
+        let parent: URL
+        if lstat(namespace.path, &value) == 0 {
+            guard value.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else { return result("namespace-type", ENOTDIR) }
+            parent = namespace
+        } else {
+            let code = errno
+            guard code == ENOENT else { return result("namespace-stat", code) }
+            parent = group.url
+        }
+        // access(W_OK)/isWritableFile can disagree with sandbox or directory
+        // ACL permissions. Check an actual exclusive create/write/read/remove;
+        // never touch account directories and never recursively delete anything.
+        let probe = parent.appendingPathComponent(".wygram-share-check-" + UUID().uuidString, isDirectory: true)
+        guard mkdir(probe.path, 0o700) == 0 else { return result("probe-mkdir", errno) }
+        let file = probe.appendingPathComponent("check")
+        var ownsFile = false
+        var ownsDirectory = true
+        defer { if ownsFile { _ = unlink(file.path) }; if ownsDirectory { _ = rmdir(probe.path) } }
+        let fd = open(file.path, O_CREAT | O_EXCL | O_RDWR | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { return result("probe-open", errno) }
+        ownsFile = true
+        defer { close(fd) }
+        var byte: UInt8 = 0x57
+        guard write(fd, &byte, 1) == 1 else { return result("probe-write", errno) }
+        guard lseek(fd, 0, SEEK_SET) == 0 else { return result("probe-seek", errno) }
+        var readByte: UInt8 = 0
+        guard read(fd, &readByte, 1) == 1, readByte == byte else { return result("probe-read", errno) }
+        guard unlink(file.path) == 0 else { return result("probe-unlink", errno) }
+        ownsFile = false
+        guard rmdir(probe.path) == 0 else { return result("probe-rmdir", errno) }
+        ownsDirectory = false
+        guard !self.vacantGroups([group]).isEmpty else { return result("slot-check", EEXIST) }
+        return result("ready", 0)
     }
 
     public static func commonSignedGroups(mainExecutable: Data, shareExecutable: Data) -> Set<String> {
@@ -78,6 +136,7 @@ public enum WyGramDirectShare {
         defaults.set(group.identifier, forKey: self.requestKey)
         defaults.set(group.accountRelativePath, forKey: self.requestPathKey)
         defaults.removeObject(forKey: self.resultKey)
+        defaults.removeObject(forKey: self.failureKey)
         return defaults.synchronize()
     }
 
@@ -90,14 +149,14 @@ public enum WyGramDirectShare {
             if group.accountRelativePath != nil {
                 let namespace = group.url.appendingPathComponent("WyGramAccounts")
                 if lstat(namespace.path, &value) == 0 {
-                    guard self.identity(namespace) != nil, FileManager.default.isWritableFile(atPath: namespace.path) else { return false }
+                    guard self.identity(namespace) != nil else { return false }
                 } else if errno != ENOENT { return false }
                 // The complete slot must be unused, even if it is empty.
                 return lstat(group.accountURL.path, &value) != 0 && errno == ENOENT
-                    && self.identity(group.url) != nil && FileManager.default.isWritableFile(atPath: group.url.path)
+                    && self.identity(group.url) != nil
             }
             return lstat(group.accountURL.appendingPathComponent("telegram-data").path, &value) != 0 && errno == ENOENT
-                && self.identity(group.url) != nil && FileManager.default.isWritableFile(atPath: group.url.path)
+                && self.identity(group.url) != nil
         }
     }
 
@@ -158,6 +217,7 @@ public enum WyGramDirectShare {
         defaults.set("shared", forKey: self.selectionKey)
         self.cancelRequest(defaults: defaults)
         defaults.set("enabled", forKey: self.resultKey)
+        defaults.removeObject(forKey: self.failureKey)
         // Keep the recovery journal if preferences cannot be flushed. A restart
         // must never create an empty private account store after a successful move.
         if defaults.synchronize() { try? FileManager.default.removeItem(at: journal) }
@@ -226,6 +286,8 @@ public enum WyGramDirectShare {
         catch {
             self.cancelRequest(defaults: defaults)
             defaults.set("directory", forKey: self.resultKey)
+            let value = error as NSError
+            defaults.set("prepare(\(value.domain == NSPOSIXErrorDomain ? value.code : -1))", forKey: self.failureKey)
             return nil
         }
         let journal = Journal(group: group.identifier, path: group.accountRelativePath, device: device, inode: inode)
@@ -244,6 +306,8 @@ public enum WyGramDirectShare {
             try? fm.removeItem(at: journalURL)
             self.cancelRequest(defaults: defaults)
             defaults.set("move", forKey: self.resultKey)
+            let value = error as NSError
+            defaults.set("rename(\(value.domain == NSPOSIXErrorDomain ? value.code : -1))", forKey: self.failureKey)
             return nil
         }
         guard !fm.fileExists(atPath: source.path), self.matches(destination, journal: journal) else { throw CocoaError(.fileReadCorruptFile) }

@@ -1,4 +1,5 @@
 import UIKit
+import Darwin
 import SGAppGroupIdentifier
 
 // The production settings class is compiled below. Only its presentation theme
@@ -82,6 +83,23 @@ func probeInboxes() -> [WyGramShareInbox] { probeGroups.map { WyGramShareInbox(d
         let missing = controller.presentedViewController as? UIAlertController
         check("missing-permission-explains-reason", missing?.title == "暂时无法启用" && (missing?.message?.contains("共同") ?? false))
         check("missing-permission-does-not-save-request", probeDefaults.string(forKey: WyGramDirectShare.requestKey) == nil)
+        controller.dismiss(animated: false)
+        await pause()
+        probeGroups = [existing]
+        precondition(chmod(existing.url.path, 0o500) == 0)
+        defer { _ = chmod(existing.url.path, 0o700) }
+        controller.viewWillAppear(false)
+        check("denied-write-remains-actionable", action().isUserInteractionEnabled)
+        controller.tableView(controller.tableView, didSelectRowAt: row)
+        await pause()
+        let denied = controller.presentedViewController as? UIAlertController
+        check("denied-write-alert-has-real-posix-step", (denied?.message?.contains("probe-mkdir(") ?? false) && (denied?.message?.contains("系统拒绝") ?? false))
+        controller.dismiss(animated: false)
+        await pause()
+        controller.tableView(controller.tableView, didSelectRowAt: IndexPath(row: 0, section: 3))
+        let copied = UIPasteboard.general.string ?? ""
+        check("copied-diagnostics-include-stage-and-code", copied.contains("目录实测:") && copied.contains("probe-mkdir("))
+        check("copied-diagnostics-exclude-container-paths", !copied.contains(root.path) && !copied.contains("group.fixture"))
         let report: [String: Any] = ["passed": checks.allSatisfy { $0["passed"] as? Bool == true }, "checks": checks, "runID": ProcessInfo.processInfo.environment["WYGRAM_SHARE_PROBE_RUN_ID"] ?? "", "scope": "Production settings class with actual UIKit tables and alerts; injected signed-group discovery and defaults, minimal theme superclass. Not full Legacy wrapper, authenticated native ShareController or physical-device permissions."]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: documents.appendingPathComponent("results.json"))
     }

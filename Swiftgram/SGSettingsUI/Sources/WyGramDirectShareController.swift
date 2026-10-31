@@ -1,4 +1,5 @@
 import UIKit
+import Darwin
 import Display
 import AccountContext
 import TelegramPresentationData
@@ -17,6 +18,7 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
     private let chinese: Bool
     private var groups: [WyGramDirectShare.Group] = []
     private var destinations: [WyGramDirectShare.Group] = []
+    private var checks: [WyGramDirectShare.SetupCheck] = []
     private var pendingFiles = 0
     private var shared = false
     private var pending = false
@@ -30,7 +32,8 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
     override func viewWillAppear(_ animated: Bool) { super.viewWillAppear(animated); self.refresh() }
     private func refresh() {
         self.groups = WyGramDirectShare.availableGroups()
-        self.destinations = WyGramDirectShare.setupGroups(self.groups)
+        self.checks = WyGramDirectShare.setupChecks(self.groups)
+        self.destinations = self.checks.filter { $0.available }.map { $0.group }
         self.pendingFiles = WyGramShareInbox.current().reduce(0) { $0 + $1.pending().count }
         self.shared = UserDefaults.standard.string(forKey: WyGramDirectShare.selectionKey) == "shared" && WyGramDirectShare.sharedAccountGroup() != nil
         self.pending = UserDefaults.standard.string(forKey: WyGramDirectShare.requestKey) != nil
@@ -87,7 +90,19 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
     private func failureText() -> String {
         if self.groups.isEmpty { return self.text("当前签名未提供主应用与 Share 扩展共同可用的接收目录。请向签名提供方确认两者的 App Group 权限。", "This signature provides no common receiving directory for the app and Share extension. Ask your signing provider to check both components' App Group permissions.") }
         if self.destinations.isEmpty {
-            return self.text("无法创建 WyGram 的独立共享位置。请检查剩余空间和共享权限，再重新尝试。当前账号和记录已保留。", "A separate WyGram location cannot be prepared. Check free space and sharing permission, then retry. Your current account and records are preserved.")
+            let codes = Set(self.checks.map { $0.code })
+            let reason: String
+            if codes.contains(ENOSPC) {
+                reason = self.text("系统报告存储空间不足。请释放空间后重新尝试。", "The system reports insufficient storage. Free some space and retry.")
+            } else if codes.contains(EACCES) || codes.contains(EPERM) || codes.contains(EROFS) {
+                reason = self.text("系统拒绝访问或写入共享位置。需要确认主应用与 Share 扩展实际签入的 App Group 权限。", "The system denied shared-directory access or writing. Check the actual signed App Group permissions of both the app and Share extension.")
+            } else if codes.contains(ENOENT) {
+                reason = self.text("系统返回的共享位置尚不存在或无法访问。请复制分享状态以核对签名与容器。", "The returned shared location does not exist or cannot be accessed. Copy sharing status to check the signature and container.")
+            } else {
+                reason = self.text("共享位置的目录或读写检查未通过。请复制分享状态查看具体检查结果。", "A shared-directory or read/write check failed. Copy sharing status for the precise result.")
+            }
+            let details = self.checks.enumerated().map { "\($0.offset + 1):\($0.element.diagnostic)" }.joined(separator: " ")
+            return reason + self.text("\n当前账号和记录已保留。\n检查：", "\nYour current account and records are preserved.\nChecks: ") + details
         }
         switch self.result {
         case "occupied": return self.text("上次目标目录已被占用。现在会为 WyGram 创建独立位置，可重新启用；不会覆盖已有数据。", "The previous destination was occupied. Setup now creates a separate WyGram location; retry without overwriting existing data.")
@@ -104,7 +119,8 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
         }
         if indexPath.section == 3 {
             self.refresh()
-            UIPasteboard.general.string = "WyGram \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] ?? "?"))\n共同共享目录: \(self.groups.count)\n可启用共享目录: \(self.destinations.count)\n待分享批次: \(self.pendingFiles)\n接收状态: \(UserDefaults.standard.string(forKey: WyGramShareInbox.importStatusKey) ?? "none")\n账号存储: \(UserDefaults.standard.string(forKey: WyGramDirectShare.selectionKey) ?? "unknown")\n直接分享: \(self.shared ? "ready" : "unavailable")\n待启用: \(self.pending)\n启用结果: \(self.result ?? "none")"
+            let details = self.checks.enumerated().map { "\($0.offset + 1):\($0.element.diagnostic)" }.joined(separator: " ")
+            UIPasteboard.general.string = "WyGram \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] ?? "?"))\n共同共享目录: \(self.groups.count)\n可启用共享目录: \(self.destinations.count)\n目录实测: \(details.isEmpty ? "none" : details)\n待分享批次: \(self.pendingFiles)\n接收状态: \(UserDefaults.standard.string(forKey: WyGramShareInbox.importStatusKey) ?? "none")\n账号存储: \(UserDefaults.standard.string(forKey: WyGramDirectShare.selectionKey) ?? "unknown")\n直接分享: \(self.shared ? "ready" : "unavailable")\n待启用: \(self.pending)\n启用结果: \(self.result ?? "none")\n切换错误: \(UserDefaults.standard.string(forKey: WyGramDirectShare.failureKey) ?? "none")"
             return
         }
         guard indexPath.section == 1, !self.shared else { return }
