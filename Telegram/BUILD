@@ -1124,6 +1124,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier",
         "//submodules/TelegramUI:TelegramUI",
         ":NotificationContentExtensionLink",
     ],
@@ -1222,6 +1223,7 @@ swift_library(
         ":WidgetAssets",
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier",
         "//submodules/BuildConfig:BuildConfig",
         "//submodules/WidgetItems:WidgetItems_iOS14",
         "//submodules/WidgetItemsUtils:WidgetItemsUtils",
@@ -1359,6 +1361,7 @@ swift_library(
         ":IntentsAssets"
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramApi:TelegramApi",
@@ -1598,6 +1601,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//Swiftgram/SGAppGroupIdentifier",
         "//submodules/TelegramUI:TelegramUI",
         "//submodules/TelegramVoip:TelegramVoip",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",

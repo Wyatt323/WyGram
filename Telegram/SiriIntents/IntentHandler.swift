@@ -1,3 +1,4 @@
+import SGAppGroupIdentifier
 import Foundation
 import Intents
 import TelegramCore
@@ -98,8 +99,7 @@ class DefaultIntentHandler: INExtension, INSendMessageIntentHandling, INSearchFo
         let apiHash: String = buildConfig.apiHash
         let languagesCategory = "ios"
         
-        let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let maybeAppGroupUrl = WyGramDirectShare.sharedAccountGroup()?.accountURL
         
         guard let appGroupUrl = maybeAppGroupUrl else {
             return
@@ -878,8 +878,7 @@ private final class WidgetIntentHandler {
         
         let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
         
-        let appGroupName = "group.\(baseAppBundleId)"
-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        let maybeAppGroupUrl = WyGramDirectShare.sharedAccountGroup()?.accountURL
         
         guard let appGroupUrl = maybeAppGroupUrl else {
             return

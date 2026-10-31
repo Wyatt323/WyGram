@@ -1,6 +1,6 @@
 # WyGram contributor notes
 
-- Current version: 1.1.1 (build 23). Increment patch version and independent build number for each new release. Synchronize main app and all extensions.
+- Current version: 1.1.2 (build 24). Increment patch version and independent build number for each new release. Synchronize main app and all extensions.
 - IPA filenames: `WyGram <version>.ipa`; GitHub normalizes spaces to periods in stored names. Preserve old releases. See `docs/wygram-build.md`.
 - Keep `app.wygram.ios` and existing application data/signing identity for in-place upgrades.
 - Never commit private API configuration, signing keys, provisioning profiles, account databases, build logs or generated outputs.
@@ -21,3 +21,5 @@
 - Direct-share setup chooses a vacant authorised common group, including a safe alternative for an old occupied request. Do not overwrite even empty existing stores. Native sharing requires the main app's positive shared-storage marker. Main and extension inbox discovery use the same actual signing-group intersection.
 
 - Shared-container startup must not recursively sweep unknown sibling directories. A vacant telegram-data slot does not establish ownership of the rest of an App Group; preserve other applications' files and use account-scoped cleanup only.
+
+- 1.1.2 uses a validated app-owned `WyGramAccounts/<UUID>` relative account parent for new direct-share requests, so occupied legacy root stores do not disable setup. Keep legacy root selections/journals compatible, exclusive atomic rename, positive location markers and missing-store refusal. Every account-consuming extension must resolve the same parent; never persist an absolute installation-container path. URL comparisons use standardized paths so directory trailing slashes cannot break readiness.

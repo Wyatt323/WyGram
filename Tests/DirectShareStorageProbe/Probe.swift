@@ -9,7 +9,8 @@ import SGAppGroupIdentifier
     static func inode(_ url: URL) -> UInt64 { var s = stat(); precondition(lstat(url.path, &s) == 0); return UInt64(s.st_ino) }
     static func journal(_ local: URL, _ group: WyGramDirectShare.Group, source: URL) throws {
         var s = stat(); precondition(lstat(source.path, &s) == 0)
-        let record: [String: Any] = ["group": group.identifier, "device": Int64(s.st_dev), "inode": UInt64(s.st_ino)]
+        var record: [String: Any] = ["group": group.identifier, "device": Int64(s.st_dev), "inode": UInt64(s.st_ino)]
+        if let path = group.accountRelativePath { record["path"] = path }
         try JSONSerialization.data(withJSONObject: record).write(to: local.appendingPathComponent(".wygram-direct-share-transition.json"))
     }
     static func snapshot(_ url: URL) -> [String: Data] {
@@ -104,8 +105,9 @@ import SGAppGroupIdentifier
             if occupied { try Data("OTHER ACCOUNT".utf8).write(to: target.appendingPathComponent("other")) }
             let before = snapshot(local.appendingPathComponent("telegram-data")), other = snapshot(target)
             _ = WyGramDirectShare.request(group: group, defaults: d)
-            check("occupied-destination-refused-\(occupied)", try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [group], defaults: d) == nil)
-            check("both-stores-preserved-\(occupied)", snapshot(local.appendingPathComponent("telegram-data")) == before && snapshot(target) == other && d.string(forKey: WyGramDirectShare.resultKey) == "occupied")
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [group], defaults: d)
+            check("occupied-root-uses-separate-namespace-\(occupied)", selected?.accountRelativePath != nil)
+            check("both-stores-preserved-\(occupied)", selected.map { snapshot($0.accountURL.appendingPathComponent("telegram-data")) == before } == true && snapshot(target) == other && d.string(forKey: WyGramDirectShare.resultKey) == "enabled")
         }
         do {
             let (local, occupied, d) = try fixture("occupied-first-free-second")
@@ -145,7 +147,8 @@ import SGAppGroupIdentifier
             check("dangling-destination-not-vacant", WyGramDirectShare.vacantGroups([group]).isEmpty)
             let before = snapshot(local.appendingPathComponent("telegram-data"))
             _ = WyGramDirectShare.request(group: group, defaults: d)
-            check("dangling-destination-refused-without-account-change", try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [group], defaults: d) == nil && snapshot(local.appendingPathComponent("telegram-data")) == before)
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [group], defaults: d)
+            check("dangling-root-uses-separate-namespace-without-touching-link", selected?.accountRelativePath != nil && selected.map { snapshot($0.accountURL.appendingPathComponent("telegram-data")) == before } == true && (try? fm.destinationOfSymbolicLink(atPath: target.path))?.hasSuffix("missing") == true)
         }
         do {
             let (local, group, d) = try fixture("move-denied")
@@ -217,6 +220,109 @@ import SGAppGroupIdentifier
             check("startup-cleanup-keeps-notification-bridge", fm.fileExists(atPath: base.appendingPathComponent("WyGramNotificationBridge/fixture").path))
             check("startup-cleanup-keeps-account-directory", fm.fileExists(atPath: base.appendingPathComponent("telegram-data/fixture").path))
             check("startup-preserves-unowned-sibling-directory", fm.fileExists(atPath: base.appendingPathComponent("obsolete-legacy-data/fixture").path))
+        }
+
+        // Reproduce the unclickable setup: every common group already has a
+        // root store. Use fresh app-owned locations, preserving all other stores.
+        do {
+            let (local, first, d) = try fixture("all-five-roots-occupied")
+            var groups: [WyGramDirectShare.Group] = []
+            for i in 0..<5 {
+                let url = first.url.deletingLastPathComponent().appendingPathComponent("group-\(i)")
+                try fm.createDirectory(at: url.appendingPathComponent("telegram-data/accounts-metadata"), withIntermediateDirectories: true)
+                try Data(repeating: UInt8(i), count: 48).write(to: url.appendingPathComponent("telegram-data/.tempkey"))
+                groups.append(.init(identifier: "group.fixture.\(i)", url: url))
+            }
+            let originals = groups.map { snapshot($0.url.appendingPathComponent("telegram-data")) }
+            check("baseline-all-root-slots-occupied", WyGramDirectShare.vacantGroups(groups).isEmpty)
+            let slots = WyGramDirectShare.setupGroups(groups)
+            check("setup-action-available-despite-five-occupied-roots", slots.count == 5 && slots.allSatisfy { $0.accountRelativePath != nil })
+            let source = local.appendingPathComponent("telegram-data"), original = snapshot(source), originalInode = inode(source)
+            check("namespace-request-persisted", WyGramDirectShare.request(group: slots[0], defaults: d) && d.string(forKey: WyGramDirectShare.requestPathKey) == slots[0].accountRelativePath)
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: groups, defaults: d)!
+            check("namespace-store-inode-and-contents-preserved", inode(selected.accountURL.appendingPathComponent("telegram-data")) == originalInode && snapshot(selected.accountURL.appendingPathComponent("telegram-data")) == original)
+            check("namespace-selection-persisted-as-relative-path", d.string(forKey: WyGramDirectShare.pathKey) == selected.accountRelativePath && !(d.string(forKey: WyGramDirectShare.pathKey) ?? "").hasPrefix("/"))
+            check("all-other-root-stores-preserved", groups.enumerated().allSatisfy { snapshot($0.element.url.appendingPathComponent("telegram-data")) == originals[$0.offset] })
+            let restarted = try ApplicationDataStorage.resolve(sharedDirectory: selected.url, sharedGroupIdentifier: selected.identifier, localDirectory: local, defaults: d)
+            check("restart-uses-same-namespaced-parent", restarted.baseURL == selected.accountURL && restarted.sharedGroupIdentifier == selected.identifier)
+            let inboxes = groups.map { WyGramShareInbox(directory: $0.url.appendingPathComponent("WyGramShareInbox/app.wygram.fixture")) }
+            for inbox in inboxes { inbox.publishAccountStorage(group: restarted.baseURL) }
+            let shared = WyGramDirectShare.sharedAccountGroup(groups: groups, bundleIdentifier: "app.wygram.fixture")
+            check("extension-finds-main-exact-account-parent", shared?.accountURL == restarted.baseURL)
+            check("extension-never-selects-other-root-store", !WyGramShareInbox.canUseSharedAccount(group: selected.url, inboxes: [inboxes[0]]))
+            check("other-group-markers-remain-local", inboxes.dropFirst().allSatisfy { $0.mainUsesLocalStorage })
+            let otherApp = WyGramShareInbox(directory: selected.url.appendingPathComponent("WyGramShareInbox/app.other.fixture"))
+            check("other-app-marker-cannot-select-wygram-account", otherApp.sharedAccountLocation == nil && WyGramDirectShare.sharedAccountGroup(groups: groups, bundleIdentifier: "app.other.fixture") == nil)
+            // Installation container changes do not invalidate relative locations.
+            let relocated = selected.url.deletingLastPathComponent().appendingPathComponent("relocated")
+            try fm.moveItem(at: selected.url, to: relocated)
+            let relocatedGroup = WyGramDirectShare.Group(identifier: selected.identifier, url: relocated)
+            let reopened = try ApplicationDataStorage.resolve(sharedDirectory: relocated, sharedGroupIdentifier: selected.identifier, localDirectory: local, defaults: d)
+            check("changed-container-path-resolves-relative-account", reopened.baseURL == relocated.appendingPathComponent(selected.accountRelativePath!) && WyGramDirectShare.sharedAccountGroup(groups: [relocatedGroup], bundleIdentifier: "app.wygram.fixture")?.accountURL == reopened.baseURL)
+            try fm.moveItem(at: reopened.baseURL, to: relocated.appendingPathComponent("offline-account"))
+            do { _ = try ApplicationDataStorage.resolve(sharedDirectory: relocated, sharedGroupIdentifier: selected.identifier, localDirectory: local, defaults: d); check("missing-namespace-stops-empty-store-creation", false) }
+            catch { check("missing-namespace-stops-empty-store-creation", !fm.fileExists(atPath: reopened.baseURL.path) && !fm.fileExists(atPath: source.path)) }
+        }
+        for moved in [false, true] {
+            let (local, container, d) = try fixture("namespace-recovery-\(moved)")
+            let group = WyGramDirectShare.setupGroups([container])[0]
+            let source = local.appendingPathComponent("telegram-data"), destination = group.accountURL.appendingPathComponent("telegram-data")
+            let before = snapshot(source)
+            try fm.createDirectory(at: group.accountURL, withIntermediateDirectories: true)
+            try journal(local, group, source: source)
+            if moved { precondition(renamex_np(source.path, destination.path, UInt32(RENAME_EXCL)) == 0) }
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [container], defaults: d)
+            check("namespace-recovery-exact-location-\(moved)", moved ? selected?.accountURL == group.accountURL && d.string(forKey: WyGramDirectShare.pathKey) == group.accountRelativePath : selected == nil)
+            check("namespace-recovery-preserves-bytes-\(moved)", snapshot(moved ? destination : source) == before)
+        }
+        do {
+            let (local, container, d) = try fixture("namespace-permissions-lost")
+            let group = WyGramDirectShare.setupGroups([container])[0]
+            let source = local.appendingPathComponent("telegram-data"), target = group.accountURL.appendingPathComponent("telegram-data")
+            try fm.createDirectory(at: group.accountURL, withIntermediateDirectories: true)
+            try journal(local, group, source: source)
+            precondition(renamex_np(source.path, target.path, UInt32(RENAME_EXCL)) == 0)
+            do { _ = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [], defaults: d); check("namespace-journal-kept-when-rights-lost", false) }
+            catch { check("namespace-journal-kept-when-rights-lost", fm.fileExists(atPath: local.appendingPathComponent(".wygram-direct-share-transition.json").path) && !fm.fileExists(atPath: source.path)) }
+            check("namespace-recovery-after-rights-restored", try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [container], defaults: d)?.accountURL == group.accountURL)
+        }
+        for path in ["../outside", "/tmp/outside", "WyGramAccounts/../outside", "WyGramAccounts/", "WyGramAccounts/not-a-uuid", "WyGramAccounts/" + UUID().uuidString + "/child"] {
+            check("invalid-relative-path-refused-\(path)", !WyGramDirectShare.validAccountPath(path))
+        }
+        do {
+            let (local, container, d) = try fixture("invalid-path")
+            d.set("shared", forKey: WyGramDirectShare.selectionKey)
+            d.set("../outside", forKey: WyGramDirectShare.pathKey)
+            do { _ = try ApplicationDataStorage.resolve(sharedDirectory: container.url, sharedGroupIdentifier: container.identifier, localDirectory: local, defaults: d); check("invalid-persisted-path-stops-opening", false) }
+            catch { check("invalid-persisted-path-stops-opening", fm.fileExists(atPath: local.appendingPathComponent("telegram-data/.tempkey").path)) }
+            let inbox = WyGramShareInbox(directory: container.url.appendingPathComponent("WyGramShareInbox/app.wygram.fixture"))
+            try inbox.prepare()
+            for marker in ["shared:../outside", "shared:/tmp/outside", "shared:WyGramAccounts/no", "shared:", "garbage"] {
+                try Data(marker.utf8).write(to: inbox.directory.appendingPathComponent("storage-mode"))
+                check("invalid-marker-not-used-\(marker)", inbox.sharedAccountLocation == nil && WyGramDirectShare.sharedAccountGroup(groups: [container], bundleIdentifier: "app.wygram.fixture") == nil)
+            }
+        }
+        do {
+            let (local, container, d) = try fixture("namespace-symlink")
+            let outside = local.appendingPathComponent("external")
+            try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+            try fm.createSymbolicLink(at: container.url.appendingPathComponent("WyGramAccounts"), withDestinationURL: outside)
+            check("symlink-namespace-not-eligible-for-setup", WyGramDirectShare.setupGroups([container]).isEmpty)
+            let group = WyGramDirectShare.Group(identifier: container.identifier, url: container.url, accountRelativePath: "WyGramAccounts/" + UUID().uuidString)
+            check("symlink-namespace-cannot-open-account", !WyGramDirectShare.usableAccount(group))
+            _ = WyGramDirectShare.request(group: group, defaults: d)
+            check("symlink-namespace-does-not-move-account", try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [container], defaults: d) == nil && fm.fileExists(atPath: local.appendingPathComponent("telegram-data/.tempkey").path) && snapshot(outside).isEmpty)
+        }
+        do {
+            let (local, container, d) = try fixture("namespace-slot-occupied")
+            let group = WyGramDirectShare.setupGroups([container])[0]
+            try fm.createDirectory(at: group.accountURL, withIntermediateDirectories: true)
+            try Data("OCCUPIED".utf8).write(to: group.accountURL.appendingPathComponent("keep"))
+            let before = snapshot(group.accountURL)
+            _ = WyGramDirectShare.request(group: group, defaults: d)
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [container], defaults: d)
+            check("occupied-namespace-slot-uses-new-slot", selected?.accountRelativePath != nil && selected?.accountRelativePath != group.accountRelativePath)
+            check("occupied-namespace-slot-is-preserved", snapshot(group.accountURL) == before)
         }
         let report: [String: Any] = ["passed": checks.allSatisfy { $0["passed"] as? Bool == true }, "checks": checks, "scope": "Exact production transition and ApplicationDataStorage code with constructed directories and a real SQLite fixture; not Telegram accounts, iOS entitlements or LCSign device validation."]
         let output = URL(fileURLWithPath: CommandLine.arguments[1])

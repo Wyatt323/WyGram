@@ -63,7 +63,7 @@ class ShareRootController: UIViewController {
                 self.showFallback()
                 return
             }
-            let appGroupUrl = group.url
+            let appGroupUrl = group.accountURL
             
             let rootPath = appGroupUrl.path + "/telegram-data"
             

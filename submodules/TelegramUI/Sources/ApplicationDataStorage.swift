@@ -50,10 +50,16 @@ struct ApplicationDataStorage {
 
         if let sharedDirectory = sharedDirectory {
             do {
-                try self.prepare(directory: sharedDirectory, fileManager: fileManager)
+                let path = defaults.string(forKey: WyGramDirectShare.pathKey)
+                guard WyGramDirectShare.validAccountPath(path) else { throw StorageError.previousSharedStorageUnavailable }
+                let location = WyGramDirectShare.Group(identifier: sharedGroupIdentifier, url: sharedDirectory, accountRelativePath: path)
+                // A committed namespaced store must already exist. Missing
+                // rights or files must not turn into an empty signed-out account.
+                if path != nil { guard WyGramDirectShare.usableAccount(location) else { throw StorageError.previousSharedStorageUnavailable } }
+                try self.prepare(directory: location.accountURL, fileManager: fileManager)
                 defaults.set("shared", forKey: self.selectionKey)
                 defaults.set(sharedGroupIdentifier, forKey: WyGramDirectShare.groupKey)
-                return ApplicationDataStorage(baseURL: sharedDirectory, sharedGroupIdentifier: sharedGroupIdentifier)
+                return ApplicationDataStorage(baseURL: location.accountURL, sharedGroupIdentifier: sharedGroupIdentifier)
             } catch {
                 if previousSelection == "shared" {
                     throw StorageError.previousSharedStorageUnavailable

@@ -1,3 +1,4 @@
+import SGAppGroupIdentifier
 import UIKit
 import UserNotifications
 import UserNotificationsUI
@@ -24,8 +25,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             
             let languagesCategory = "ios"
             
-            let appGroupName = "group.\(baseAppBundleId)"
-            let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+            let maybeAppGroupUrl = WyGramDirectShare.sharedAccountGroup()?.accountURL
             
             guard let appGroupUrl = maybeAppGroupUrl else {
                 return

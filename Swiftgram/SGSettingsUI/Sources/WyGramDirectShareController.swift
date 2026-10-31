@@ -16,7 +16,7 @@ public func wygramDirectShareController(context: AccountContext) -> ViewControll
 private final class WyGramDirectShareSettings: WyGramSettingsTableController {
     private let chinese: Bool
     private var groups: [WyGramDirectShare.Group] = []
-    private var vacant: [WyGramDirectShare.Group] = []
+    private var destinations: [WyGramDirectShare.Group] = []
     private var pendingFiles = 0
     private var shared = false
     private var pending = false
@@ -30,7 +30,7 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
     override func viewWillAppear(_ animated: Bool) { super.viewWillAppear(animated); self.refresh() }
     private func refresh() {
         self.groups = WyGramDirectShare.availableGroups()
-        self.vacant = WyGramDirectShare.vacantGroups(self.groups)
+        self.destinations = WyGramDirectShare.setupGroups(self.groups)
         self.pendingFiles = WyGramShareInbox.current().reduce(0) { $0 + $1.pending().count }
         self.shared = UserDefaults.standard.string(forKey: WyGramDirectShare.selectionKey) == "shared" && WyGramDirectShare.sharedAccountGroup() != nil
         self.pending = UserDefaults.standard.string(forKey: WyGramDirectShare.requestKey) != nil
@@ -70,9 +70,9 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
                 cell.detailTextLabel?.text = self.failureText()
             }
         } else if indexPath.section == 1 {
-            cell.textLabel?.text = self.pending ? self.text("取消启用", "Cancel setup") : self.text("启用直接分享", "Enable direct sharing")
+            cell.textLabel?.text = self.shared ? self.text("直接分享已启用", "Direct sharing enabled") : self.pending ? self.text("取消启用", "Cancel setup") : self.text("启用直接分享", "Enable direct sharing")
             cell.textLabel?.textColor = self.settingsTheme.list.itemAccentColor
-            cell.isUserInteractionEnabled = !self.shared && (!self.vacant.isEmpty || self.pending)
+            cell.isUserInteractionEnabled = !self.shared
             cell.contentView.alpha = cell.isUserInteractionEnabled ? 1 : 0.45
         } else if indexPath.section == 2 {
             cell.textLabel?.text = self.text("接收待分享文件", "Receive pending shares")
@@ -86,12 +86,12 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
     }
     private func failureText() -> String {
         if self.groups.isEmpty { return self.text("当前签名未提供主应用与 Share 扩展共同可用的接收目录。请向签名提供方确认两者的 App Group 权限。", "This signature provides no common receiving directory for the app and Share extension. Ask your signing provider to check both components' App Group permissions.") }
-        if self.vacant.isEmpty {
-            return self.text("可用共享目录均已有数据，已保留当前账号，未覆盖任何记录。仍可通过后备分享后，点击下方“接收待分享文件”选择聊天。", "All common directories already contain data. Your account and existing stores were preserved. You can still receive fallback shares using the action below.")
+        if self.destinations.isEmpty {
+            return self.text("无法创建 WyGram 的独立共享位置。请检查剩余空间和共享权限，再重新尝试。当前账号和记录已保留。", "A separate WyGram location cannot be prepared. Check free space and sharing permission, then retry. Your current account and records are preserved.")
         }
         switch self.result {
-        case "occupied": return self.text("上次目标目录已被占用。现在会选择空闲目录，可重新启用；不会覆盖已有数据。", "The previous destination was occupied. Setup now selects an unused directory; retry to enable without overwriting data.")
-        case "move", "source", "interrupted": return self.text("上次启用未完成，当前账号和记录已保留。可重新尝试或复制状态反馈。", "Setup did not finish; your current account and records were preserved. Retry or copy the status for support.")
+        case "occupied": return self.text("上次目标目录已被占用。现在会为 WyGram 创建独立位置，可重新启用；不会覆盖已有数据。", "The previous destination was occupied. Setup now creates a separate WyGram location; retry without overwriting existing data.")
+        case "move", "source", "interrupted", "directory": return self.text("上次启用未完成，当前账号和记录已保留。可重新尝试或复制状态反馈。", "Setup did not finish; your current account and records were preserved. Retry or copy the status for support.")
         default: return self.text("启用后完整重新启动一次，即可在分享面板内选择收件人。", "Enable this and restart once to choose recipients in the share sheet.")
         }
     }
@@ -104,22 +104,28 @@ private final class WyGramDirectShareSettings: WyGramSettingsTableController {
         }
         if indexPath.section == 3 {
             self.refresh()
-            UIPasteboard.general.string = "WyGram \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] ?? "?"))\n共同共享目录: \(self.groups.count)\n空闲共享目录: \(self.vacant.count)\n待分享批次: \(self.pendingFiles)\n接收状态: \(UserDefaults.standard.string(forKey: WyGramShareInbox.importStatusKey) ?? "none")\n账号存储: \(UserDefaults.standard.string(forKey: WyGramDirectShare.selectionKey) ?? "unknown")\n直接分享: \(self.shared ? "ready" : "unavailable")\n待启用: \(self.pending)\n启用结果: \(self.result ?? "none")"
+            UIPasteboard.general.string = "WyGram \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] ?? "?"))\n共同共享目录: \(self.groups.count)\n可启用共享目录: \(self.destinations.count)\n待分享批次: \(self.pendingFiles)\n接收状态: \(UserDefaults.standard.string(forKey: WyGramShareInbox.importStatusKey) ?? "none")\n账号存储: \(UserDefaults.standard.string(forKey: WyGramDirectShare.selectionKey) ?? "unknown")\n直接分享: \(self.shared ? "ready" : "unavailable")\n待启用: \(self.pending)\n启用结果: \(self.result ?? "none")"
             return
         }
         guard indexPath.section == 1, !self.shared else { return }
         if self.pending {
-            UserDefaults.standard.removeObject(forKey: WyGramDirectShare.requestKey)
+            WyGramDirectShare.cancelRequest()
             UserDefaults.standard.synchronize()
             self.refresh()
             return
         }
-        guard let group = self.vacant.first else { return }
+        self.refresh()
+        guard let group = self.destinations.first else {
+            let alert = UIAlertController(title: self.text("暂时无法启用", "Cannot enable yet"), message: self.failureText(), preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: self.text("知道了", "OK"), style: .default))
+            self.present(alert, animated: true)
+            return
+        }
         let alert = UIAlertController(title: self.text("启用直接分享", "Enable direct sharing"), message: self.text("分享扩展将能读取你已登录的账号。账号和本地消息、保留图片将完整保留；不会退出登录。\n\n请先关闭所有分享面板，然后从多任务关闭 WyGram 并重新打开，完成一次安全切换。", "The Share extension will be able to access your signed-in accounts. Your accounts, local messages and retained photos will be kept and you will stay signed in.\n\nClose all share sheets, then close WyGram from the app switcher and reopen it to complete setup."), preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: self.text("取消", "Cancel"), style: .cancel))
         alert.addAction(UIAlertAction(title: self.text("启用", "Enable"), style: .default, handler: { [weak self] _ in
             if !WyGramDirectShare.request(group: group) {
-                UserDefaults.standard.removeObject(forKey: WyGramDirectShare.requestKey)
+                WyGramDirectShare.cancelRequest()
             }
             self?.refresh()
         }))

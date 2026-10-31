@@ -44,15 +44,14 @@ public struct WyGramShareInbox {
     }
 
     public static func canUseSharedAccount(group: URL?, inboxes: [WyGramShareInbox]) -> Bool {
-        guard let group, inboxes.contains(where: { $0.storageMode == "shared" }), !inboxes.contains(where: { $0.mainUsesLocalStorage }) else { return false }
-        let root = group.appendingPathComponent("telegram-data", isDirectory: true)
-        let key = root.appendingPathComponent(".tempkey")
+        guard let group, !inboxes.contains(where: { $0.mainUsesLocalStorage }) else { return false }
         // Do not let an extension generate a replacement encryption key for an
         // inaccessible/stale account store. The main app prepares this file.
-        guard let values = try? key.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
-              values.isRegularFile == true, values.isSymbolicLink != true, values.fileSize == 48,
-              let bytes = try? Data(contentsOf: key), bytes.count == 48 else { return false }
-        return FileManager.default.fileExists(atPath: root.appendingPathComponent("accounts-metadata").path)
+        return inboxes.contains { inbox in
+            guard let location = inbox.sharedAccountLocation,
+                  location.accountURL.standardizedFileURL.path == group.standardizedFileURL.path else { return false }
+            return WyGramDirectShare.usableAccount(location)
+        }
     }
 
     public func publishStorage(shared: Bool) {
@@ -65,8 +64,25 @@ public struct WyGramShareInbox {
     }
 
     public func publishAccountStorage(group: URL?) {
-        let root = self.directory.deletingLastPathComponent().deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
-        self.publishStorage(shared: group.map { $0.resolvingSymlinksInPath().standardizedFileURL == root } ?? false)
+        let root = self.directory.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL
+        guard let group = group?.standardizedFileURL else { self.publishStorage(shared: false); return }
+        if group.path == root.path { self.publishStorage(shared: true); return }
+        let prefix = root.path + "/"
+        guard group.path.hasPrefix(prefix) else { self.publishStorage(shared: false); return }
+        let relativePath = String(group.path.dropFirst(prefix.count))
+        let location = WyGramDirectShare.Group(identifier: "", url: root, accountRelativePath: relativePath)
+        guard WyGramDirectShare.validAccountPath(relativePath), WyGramDirectShare.usableAccount(location) else { self.publishStorage(shared: false); return }
+        do {
+            try self.prepare()
+            // A single atomic marker identifies the exact account location.
+            try Data(("shared:" + relativePath).utf8).write(to: self.directory.appendingPathComponent("storage-mode"), options: .atomic)
+        } catch { }
+    }
+
+    public var sharedAccountLocation: WyGramDirectShare.Group? {
+        guard let marker = self.storageMarker, marker != "local" else { return nil }
+        let path: String? = marker == "shared" ? nil : String(marker.dropFirst("shared:".count))
+        return WyGramDirectShare.Group(identifier: "", url: self.directory.deletingLastPathComponent().deletingLastPathComponent(), accountRelativePath: path)
     }
 
     // A container lookup in the extension alone does not establish that the
@@ -81,9 +97,15 @@ public struct WyGramShareInbox {
     }
 
     private var storageMode: String? {
+        guard let marker = self.storageMarker else { return nil }
+        return marker == "local" ? "local" : "shared"
+    }
+
+    private var storageMarker: String? {
         let url = self.directory.appendingPathComponent("storage-mode")
-        guard self.regularFile(url, maximumSize: 16), let data = try? Data(contentsOf: url),
-              let mode = String(data: data, encoding: .utf8), ["shared", "local"].contains(mode) else { return nil }
+        guard self.regularFile(url, maximumSize: 128), let data = try? Data(contentsOf: url),
+              let mode = String(data: data, encoding: .utf8) else { return nil }
+        guard ["shared", "local"].contains(mode) || (mode.hasPrefix("shared:") && WyGramDirectShare.validAccountPath(String(mode.dropFirst("shared:".count)))) else { return nil }
         return mode
     }
 

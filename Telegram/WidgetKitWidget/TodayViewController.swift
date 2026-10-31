@@ -1,3 +1,4 @@
+import SGAppGroupIdentifier
 #if arch(arm64) || arch(x86_64)
 
 import UIKit
@@ -81,8 +82,7 @@ private func getCommonTimeline(friends: [Friend]?, in context: TimelineProviderC
     
     let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
     
-    let appGroupName = "group.\(baseAppBundleId)"
-    let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+    let maybeAppGroupUrl = WyGramDirectShare.sharedAccountGroup()?.accountURL
     
     guard let appGroupUrl = maybeAppGroupUrl else {
         completion(Timeline(entries: [SimpleEntry(date: entryDate, contents: .recent)], policy: .atEnd))
