@@ -80,7 +80,7 @@ def prepare(ipa, output, notes, source_commit=None):
                 total += entry.file_size
                 if total > 1500 * 1024 * 1024: raise ValueError('Archive exceeds update limits')
             archive.extractall(root)
-        apps = list((root / 'Payload').glob('*.app'))
+        apps = [path for path in (root / 'Payload').glob('*.app') if path.is_dir() and not path.name.startswith('.')]
         if len(apps) != 1: raise ValueError('Exactly one application is required')
         app = apps[0]
         info = plistlib.loads((app / 'Info.plist').read_bytes())
@@ -105,7 +105,7 @@ def prepare(ipa, output, notes, source_commit=None):
             run('codesign', '--verify', '--strict', bundle)
         output.mkdir(parents=True)
         artifact = output / f'WyGram {version}.ipa'
-        run('ditto', '-c', '-k', '--keepParent', root / 'Payload', artifact)
+        run('ditto', '-c', '-k', '--norsrc', '--noextattr', '--noacl', '--keepParent', root / 'Payload', artifact)
         if not 0 < artifact.stat().st_size <= 256 * 1024 * 1024: raise ValueError('IPA exceeds client update size limit')
         tag = f'v{version}-b{build}'
         source = output / f'WyGram-{version}-b{build}-source.patch'
