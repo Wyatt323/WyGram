@@ -21,3 +21,9 @@ file to reproduce deletion of the two active bridge directories.
 The probes are Foundation executables and do not use actual Telegram accounts,
 signing permissions, an authenticated share picker or a physical device. They
 do not execute a migration of user data, sign a release or create an IPA.
+
+Constructed Mach-O entitlement sections also check that a common group must be
+present in both executable signatures. A profile capability alone, missing or
+malformed signature, or mismatched/invalid group names cannot enable setup.
+These parser fixtures are not cryptographically valid signing or OS permission
+tests.

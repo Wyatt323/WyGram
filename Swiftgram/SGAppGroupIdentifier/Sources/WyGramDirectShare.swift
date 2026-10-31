@@ -14,14 +14,24 @@ public enum WyGramDirectShare {
         public init(identifier: String, url: URL) { self.identifier = identifier; self.url = url }
     }
 
+    public static func commonSignedGroups(mainExecutable: Data, shareExecutable: Data) -> Set<String> {
+        let main = WyGramPushCapabilities(entitlements: WyGramPushCapabilities.signedEntitlements(mainExecutable))
+        let share = WyGramPushCapabilities(entitlements: WyGramPushCapabilities.signedEntitlements(shareExecutable))
+        return Set(main.groups).intersection(share.groups)
+    }
+
     public static func availableGroups() -> [Group] {
         let main = WyGramPushCapabilities.enclosingApplication()
         guard let identifier = main.bundleIdentifier,
               let extensions = try? FileManager.default.contentsOfDirectory(at: main.bundleURL.appendingPathComponent("PlugIns"), includingPropertiesForKeys: nil),
               let share = extensions.compactMap({ Bundle(url: $0) }).first(where: {
                   ($0.infoDictionary?["NSExtension"] as? [String: Any])?["NSExtensionPointIdentifier"] as? String == "com.apple.share-services"
-              }) else { return [] }
-        let common = Set(WyGramPushCapabilities.load(main).groups).intersection(WyGramPushCapabilities.load(share).groups)
+              }), let mainURL = main.executableURL, let shareURL = share.executableURL,
+              let mainData = try? Data(contentsOf: mainURL, options: .mappedIfSafe),
+              let shareData = try? Data(contentsOf: shareURL, options: .mappedIfSafe) else { return [] }
+        // Profiles describe permitted capabilities, not the entitlements actually
+        // signed into each executable. Do not move an account on profile hints.
+        let common = self.commonSignedGroups(mainExecutable: mainData, shareExecutable: shareData)
         let canonical = "group." + identifier
         return common.sorted { a, b in a == canonical ? b != canonical : (b == canonical ? false : a < b) }.compactMap { group in
             guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { return nil }

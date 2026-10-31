@@ -21,6 +21,26 @@ import SGAppGroupIdentifier
     }
     static func main() throws {
         let fm = FileManager.default
+        // Construct only the Mach-O entitlement sections read by the production
+        // parser. These are parser fixtures, not valid signatures/OS permissions.
+        func executable(groups: [String]?) throws -> Data {
+            let plist = try PropertyListSerialization.data(fromPropertyList: groups.map { ["com.apple.security.application-groups": $0] } ?? [:], format: .xml, options: 0)
+            func integers(_ values: [UInt32], big: Bool = false) -> Data {
+                var result = Data()
+                for value in values { var n = big ? value.bigEndian : value.littleEndian; withUnsafeBytes(of: &n) { result.append(contentsOf: $0) } }
+                return result
+            }
+            let length = UInt32(28 + plist.count)
+            return integers([0xfeedfacf, 0x0100000c, 0, 2, 1, 16, 0, 0, 0x1d, 16, 48, length]) + integers([0xfade0cc0, length, 1, 5, 20, 0xfade7171, UInt32(8 + plist.count)], big: true) + plist
+        }
+        let mainExecutable = try executable(groups: ["group.wygram.fixture", "group.main-only"])
+        check("matching-signed-group-discovered", WyGramDirectShare.commonSignedGroups(mainExecutable: mainExecutable, shareExecutable: try executable(groups: ["group.wygram.fixture", "group.share-only"])) == Set(["group.wygram.fixture"]))
+        check("mismatched-signed-groups-refused", WyGramDirectShare.commonSignedGroups(mainExecutable: mainExecutable, shareExecutable: try executable(groups: ["group.other"])).isEmpty)
+        check("profile-only-share-permission-not-inferred", WyGramDirectShare.commonSignedGroups(mainExecutable: mainExecutable, shareExecutable: try executable(groups: nil)).isEmpty)
+        check("unsigned-main-permission-not-inferred", WyGramDirectShare.commonSignedGroups(mainExecutable: Data(), shareExecutable: mainExecutable).isEmpty)
+        check("malformed-share-signature-refused", WyGramDirectShare.commonSignedGroups(mainExecutable: mainExecutable, shareExecutable: Data(mainExecutable.prefix(50))).isEmpty)
+        let invalid = try executable(groups: ["group.*", "group../invalid", "invalid-group"])
+        check("invalid-signed-group-names-refused", WyGramDirectShare.commonSignedGroups(mainExecutable: invalid, shareExecutable: invalid).isEmpty)
         let root = fm.temporaryDirectory.appendingPathComponent("wygram-direct-share-" + UUID().uuidString)
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
