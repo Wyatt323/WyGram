@@ -15,18 +15,19 @@ final class Scene: UIResponder, UIWindowSceneDelegate {
         let window = UIWindow(windowScene: scene)
         let root = UIViewController(); root.view.backgroundColor = .systemBackground
         window.rootViewController = root; self.window = window; window.makeKeyAndVisible()
-        let checks = self.exercise()
+        let checks = self.exercise(hideNames: true) + self.exercise(hideNames: false)
         let passed = checks.allSatisfy { $0["passed"] as? Bool == true }
         let label = UILabel(frame: window.bounds.insetBy(dx: 20, dy: 100));label.numberOfLines = 0
-        label.text = "复读组件检查\n\(passed ? "通过" : "失败")\n\(checks.count) 项（构造消息，无网络发送）"
+        label.text = "复读与当前会话转发组件检查\n\(passed ? "通过" : "失败")\n\(checks.count) 项（构造消息，无网络发送）"
         root.view.addSubview(label)
         let report: [String: Any] = ["passed":passed,"checks":checks,"scope":"Actual production request builder and menu item with TelegramCore/Postbox models. Synthetic fixtures; no authenticated ChatController, network send or LCSign device validation."]
         let destination = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("results.json")
         try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted,.sortedKeys]).write(to: destination)
     }
-    func exercise() -> [[String: Any]] {
+    func exercise(hideNames: Bool) -> [[String: Any]] {
         var checks: [[String: Any]] = []
-        func check(_ value: Bool, _ name: String) { checks.append(["name":name,"passed":value]) }
+        let mode = hideNames ? "repeat" : "forward-to-current-chat"
+        func check(_ value: Bool, _ name: String) { checks.append(["name":"\(mode): \(name)","passed":value]) }
         func id(_ value: Int64, namespace: PeerId.Namespace = Namespaces.Peer.CloudUser) -> PeerId { .init(namespace: namespace, id: ._internalFromInt64Value(value)) }
         func user(_ value: Int64) -> TelegramUser {
             TelegramUser(id: id(value), accessHash: nil, firstName: "测试", lastName: nil, username: nil, phone: nil, photo: [], botInfo: nil, restrictionInfo: nil, flags: [], emojiStatus: nil, usernames: [], storiesHidden: nil, nameColor: nil, backgroundEmojiId: nil, profileColor: nil, profileBackgroundEmojiId: nil, subscriberCount: nil, verificationIconFileId: nil)
@@ -37,17 +38,17 @@ final class Scene: UIResponder, UIWindowSceneDelegate {
             return Message(stableId: UInt32(number), stableVersion: 0, id: .init(peerId: peer.id, namespace: namespace, id: number), globallyUniqueId: nil, groupingKey: grouping, groupInfo: nil, threadId: nil, timestamp: 1793430000, flags: flags, tags: [], globalTags: [], localTags: [], customTags: [], forwardInfo: nil, author: user(102), text: "复读文字 😀 **格式**", attributes: attributes, media: media, peers: peers, associatedMessages: SimpleDictionary(), associatedMessageIds: [], associatedMedia: [:], associatedThreadInfo: nil, associatedStories: [:])
         }
         func request(_ message: Message, peer: Peer = peer, thread: Int64? = nil, send: Bool = true, forward: Bool = true, protected: Bool = false, bypass: Bool = false) -> EnqueueMessage? {
-            wygramRepeatMessageRequest(message: message, peer: peer, threadId: thread, canSend: send, canForward: forward, copyProtected: protected, ignoreDefaultRestrictions: bypass)
+            wygramRepeatMessageRequest(message: message, peer: peer, threadId: thread, canSend: send, canForward: forward, copyProtected: protected, ignoreDefaultRestrictions: bypass, hideNames: hideNames)
         }
         func inspect(_ value: EnqueueMessage?, source: Message, thread: Int64? = nil) -> Bool {
             guard case let .forward(sourceId, targetThread, grouping, attributes, correlation)? = value,
                   sourceId == source.id, targetThread == thread, correlation == nil,
                   case .none = grouping,
                   let options = attributes.first as? ForwardOptionsMessageAttribute else { return false }
-            return attributes.count == 1 && options.hideNames && !options.hideCaptions
+            return attributes.count == 1 && options.hideNames == hideNames && !options.hideCaptions
         }
         let original = message(attributes: [TextEntitiesMessageAttribute(entities: [.init(range: 0..<2, type: .Bold)])])
-        check(inspect(request(original), source: original), "Incoming text uses exactly its source ID, no attribution, no caption removal")
+        check(inspect(request(original), source: original), "Incoming text uses exactly its source ID, expected attribution and intact caption")
         let outgoing = message(2, flags: [])
         check(inspect(request(outgoing), source: outgoing), "Own outgoing message can be repeated")
         check(inspect(request(original, thread: 777), source: original, thread: 777), "Current topic/thread ID is retained")
@@ -82,9 +83,14 @@ final class Scene: UIResponder, UIWindowSceneDelegate {
         check(request(message(peer: left),peer: left) == nil, "Left group is rejected")
         let admin = group([.banSendText],admin: true)
         check(request(message(peer: admin),peer: admin) != nil, "Existing group administrator permission is respected")
-        for (language,title) in [("zh-hans","复读"),("zh-hant","復讀"),("en","Repeat Message")] {
+        let labels = hideNames ? [("zh-hans","复读"),("zh-hant","復讀"),("en","Repeat Message")] : [("zh-hans","转发到当前会话"),("zh-hant","轉發到目前對話"),("en","Forward to This Chat")]
+        for (language,title) in labels {
             var sends=0;var dismissals=0
-            let item = wygramRepeatMenuItem(languageCode: language,repeatMessage: { sends += 1 })
+            let send: () -> Void = {
+                check(dismissals == 1, "Menu dismisses before sending: \(language)")
+                sends += 1
+            }
+            let item = hideNames ? wygramRepeatMenuItem(languageCode: language,repeatMessage: send) : wygramForwardToCurrentChatMenuItem(languageCode: language,forwardMessage: send)
             guard case let .action(action) = item else { check(false,"Menu action exists");continue }
             check(action.text == title,"Localized repeat label: \(language)")
             check(action.icon(defaultPresentationData().theme) != nil,"Repeat icon resolves: \(language)")

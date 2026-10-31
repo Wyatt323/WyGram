@@ -5,6 +5,14 @@ import ChatPresentationInterfaceState
 
 extension ChatControllerImpl {
     func wygramRepeatMessage(_ message: EngineRawMessage) {
+        self.wygramSendMessageToCurrentChat(message, hideNames: true)
+    }
+
+    func wygramForwardMessageToCurrentChat(_ message: EngineRawMessage) {
+        self.wygramSendMessageToCurrentChat(message, hideNames: false)
+    }
+
+    private func wygramSendMessageToCurrentChat(_ message: EngineRawMessage, hideNames: Bool) {
         func request(_ controller: ChatControllerImpl) -> EnqueueMessage? {
             let state = controller.presentationInterfaceState
             guard let peer = state.renderedPeer?.peer, !state.isNotAccessible, !state.peerIsBlocked,
@@ -16,7 +24,7 @@ extension ChatControllerImpl {
             return wygramRepeatMessageRequest(message: message, peer: peer, threadId: controller.chatLocation.threadId,
                 canSend: canSendMessagesToChat(state) && canReplyInChat(state, accountPeerId: controller.context.account.peerId),
                 canForward: true, copyProtected: state.copyProtectionEnabled || state.myCopyProtectionEnabled,
-                ignoreDefaultRestrictions: canBypassRestrictions(chatPresentationInterfaceState: state))
+                ignoreDefaultRestrictions: canBypassRestrictions(chatPresentationInterfaceState: state), hideNames: hideNames)
         }
         guard request(self) != nil else { return }
         if self.presentationInterfaceState.slowmodeState != nil {

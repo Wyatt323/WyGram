@@ -2100,6 +2100,8 @@ extension ChatControllerImpl {
                     switch (mode) {
                         case wygramRepeatMessageMode:
                             strongSelf.wygramRepeatMessage(messages[0])
+                        case wygramForwardToCurrentChatMode:
+                            strongSelf.wygramForwardMessageToCurrentChat(messages[0])
                         case "forwardMessagesToCloudWithNoNamesAndOpen":
                             strongSelf.forwardMessagesToCloud(messageIds: forwardMessageIds, removeNames: true, openCloud: true)
                         case "forwardMessagesToCloud":

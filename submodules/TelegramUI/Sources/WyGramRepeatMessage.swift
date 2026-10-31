@@ -6,8 +6,9 @@ import ContextUI
 import Display
 
 let wygramRepeatMessageMode = "wygramRepeatMessage"
+let wygramForwardToCurrentChatMode = "wygramForwardToCurrentChat"
 
-func wygramRepeatMessageRequest(message: EngineRawMessage, peer: Peer, threadId: Int64?, canSend: Bool, canForward: Bool, copyProtected: Bool, ignoreDefaultRestrictions: Bool) -> EnqueueMessage? {
+func wygramRepeatMessageRequest(message: EngineRawMessage, peer: Peer, threadId: Int64?, canSend: Bool, canForward: Bool, copyProtected: Bool, ignoreDefaultRestrictions: Bool, hideNames: Bool = true) -> EnqueueMessage? {
     guard canSend, canForward, !copyProtected, peer.id == message.id.peerId,
           message.id.namespace == Namespaces.Message.Cloud,
           message.flags.intersection([.Failed, .Unsent]).isEmpty, !message.flags.isSending,
@@ -62,9 +63,9 @@ func wygramRepeatMessageRequest(message: EngineRawMessage, peer: Peer, threadId:
         }
     }
     // Exactly the pressed message, including its text/entities/caption/media.
-    // The normal forward-as-copy path removes attribution; do not copy draft,
-    // reply, edit or album selection state into the outgoing request.
-    return .forward(source: message.id, threadId: threadId, grouping: .none, attributes: [ForwardOptionsMessageAttribute(hideNames: true, hideCaptions: false)], correlationId: nil)
+    // Repeat hides attribution; direct forwarding keeps the normal source header.
+    // Do not copy draft, reply, edit or album selection state into the request.
+    return .forward(source: message.id, threadId: threadId, grouping: .none, attributes: [ForwardOptionsMessageAttribute(hideNames: hideNames, hideCaptions: false)], correlationId: nil)
 }
 
 func wygramRepeatMenuItem(languageCode: String, repeatMessage: @escaping () -> Void) -> ContextMenuItem {
@@ -74,13 +75,27 @@ func wygramRepeatMenuItem(languageCode: String, repeatMessage: @escaping () -> V
     } else {
         title = "Repeat Message"
     }
+    return wygramCurrentChatSendMenuItem(title: title, symbolName: "repeat", sendMessage: repeatMessage)
+}
+
+func wygramForwardToCurrentChatMenuItem(languageCode: String, forwardMessage: @escaping () -> Void) -> ContextMenuItem {
+    let title: String
+    if languageCode.hasPrefix("zh") {
+        title = languageCode.lowercased().contains("hant") ? "轉發到目前對話" : "转发到当前会话"
+    } else {
+        title = "Forward to This Chat"
+    }
+    return wygramCurrentChatSendMenuItem(title: title, symbolName: "arrowshape.turn.up.right", sendMessage: forwardMessage)
+}
+
+private func wygramCurrentChatSendMenuItem(title: String, symbolName: String, sendMessage: @escaping () -> Void) -> ContextMenuItem {
     var requested = false
     return .action(ContextMenuActionItem(text: title, icon: { theme in
-        return generateTintedImage(image: UIImage(systemName: "repeat", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)), color: theme.actionSheet.primaryTextColor)
+        return generateTintedImage(image: UIImage(systemName: symbolName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)), color: theme.actionSheet.primaryTextColor)
     }, action: { _, dismiss in
         guard !requested else { return }
         requested = true
         dismiss(.dismissWithoutContent)
-        repeatMessage()
+        sendMessage()
     }))
 }

@@ -1976,6 +1976,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             actions.append(wygramRepeatMenuItem(languageCode: chatPresentationInterfaceState.strings.baseLanguageCode, repeatMessage: {
                 interfaceInteraction.forwardMessages([message], wygramRepeatMessageMode)
             }))
+            actions.append(wygramForwardToCurrentChatMenuItem(languageCode: chatPresentationInterfaceState.strings.baseLanguageCode, forwardMessage: {
+                interfaceInteraction.forwardMessages([message], wygramForwardToCurrentChatMode)
+            }))
         }
 
         if data.messageActions.options.contains(.forward), message.wygramHistoryAttribute?.deletedAt == nil {
