@@ -1,8 +1,11 @@
-# WyGram 1.0.12
+# WyGram 1.0.13
 
 This fork starts from `Swiftgram/Telegram-iOS` commit `cf8b23beaaac4126a396337ac2d5be13f9f76b66`.
 
 ## Changes
+
+- Build 20 adds a one-tap Repeat Message context action for the pressed message in the current writable chat/topic, using forwarding with hidden attribution and preserved captions. It retains compose drafts and normal paid-message/slow-mode checks. The unused WyGram context submenu is removed; the top badge and settings remain. Simulator component and device verification boundaries are documented per release.
+
 
 - Build 19 adds GitHub Release checks, verified background downloads, on-device certificate import/signing and a system installation flow. The first version requires manual LCSign signing and installation; physical-device OTA validation remains pending. See [online updates](docs/wygram-online-updates.md).
 
@@ -30,6 +33,6 @@ Telegram Premium, Stars, paid messages, and anything enforced by Telegram or Swi
 
 ## Build requirements
 
-The local 1.0.12 device package uses macOS, Xcode 27.2, Bazel 8.4.2, and a minimum iOS version of 15.0. Its icon is an opaque, full-bleed blue square; iOS supplies the corner mask. The upstream toolchain requirements are in `versions.json`; the local recipe explicitly overrides the Xcode version check. Before building, create an application at [my.telegram.org](https://my.telegram.org/apps) named WyGram and enter its `api_id` and `api_hash` into a private copy of `build-system/template_minimal_development_configuration.json`. Replace the placeholder bundle identifier and Team ID with your own values. Do not commit secrets or signing files.
+The local 1.0.13 device package uses macOS, Xcode 27.2, Bazel 8.4.2, and a minimum iOS version of 15.0. Its icon is an opaque, full-bleed blue square; iOS supplies the corner mask. The upstream toolchain requirements are in `versions.json`; the local recipe explicitly overrides the Xcode version check. Before building, create an application at [my.telegram.org](https://my.telegram.org/apps) named WyGram and enter its `api_id` and `api_hash` into a private copy of `build-system/template_minimal_development_configuration.json`. Replace the placeholder bundle identifier and Team ID with your own values. Do not commit secrets or signing files.
 
 An installable IPA requires a device signing certificate and provisioning profile. The upstream README documents project generation and the `build` command. Test the resulting build by signing in, opening local features, moving the app to the background, and returning after both short and long delays on Wi-Fi and cellular data.

@@ -70,6 +70,12 @@ available_appcenter_targets = [
 
 appcenter_targets = available_appcenter_targets if telegram_bundle_id in internal_bundle_ids else []
 
+filegroup(
+    name = "WyGramRepeatMessageSources",
+    srcs = ["Sources/WyGramRepeatMessage.swift"],
+    visibility = ["//visibility:public"],
+)
+
 swift_library(
     name = "TelegramUI",
     module_name = "TelegramUI",

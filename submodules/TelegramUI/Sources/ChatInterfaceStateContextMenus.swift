@@ -1964,6 +1964,20 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             })))
         }
 
+        if !isEmbeddedMode, chatPresentationInterfaceState.subject != .scheduledMessages, !isPinnedMessages,
+           chatPresentationInterfaceState.interfaceState.editMessage == nil,
+           !chatPresentationInterfaceState.isNotAccessible, !chatPresentationInterfaceState.peerIsBlocked,
+           let peer = chatPresentationInterfaceState.renderedPeer?.peer,
+           wygramRepeatMessageRequest(message: message, peer: peer, threadId: chatPresentationInterfaceState.chatLocation.threadId,
+                canSend: data.canReply && canSendMessagesToChat(chatPresentationInterfaceState),
+                canForward: data.messageActions.options.contains(.forward),
+                copyProtected: isCopyProtected || chatPresentationInterfaceState.myCopyProtectionEnabled,
+                ignoreDefaultRestrictions: canBypassRestrictions(chatPresentationInterfaceState: chatPresentationInterfaceState)) != nil {
+            actions.append(wygramRepeatMenuItem(languageCode: chatPresentationInterfaceState.strings.baseLanguageCode, repeatMessage: {
+                interfaceInteraction.forwardMessages([message], wygramRepeatMessageMode)
+            }))
+        }
+
         if data.messageActions.options.contains(.forward), message.wygramHistoryAttribute?.deletedAt == nil {
             if !isCopyProtected {
                 actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuForward, icon: { theme in
@@ -2222,9 +2236,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 return nil
             }, action: noAction)))
         }
-        var sgActionsIndex: Int? = nil
         if !isPinnedMessages, !isReplyThreadHead, data.canSelect {
-            sgActionsIndex = actions.count
             var didAddSeparator = false
             // MARK: Swiftgram
             if let authorId = message.author?.id {
@@ -2348,40 +2360,9 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             canViewStats = canViewReadStats(message: message, participantCount: infoSummaryData.participantCount, isMessageRead: isMessageRead, isPremium: isPremium, appConfig: appConfig)
         }
 
-        // MARK: Swiftgram
-        if !sgActions.isEmpty {
-            if !actions.isEmpty {
-                if let sgActionsIndex = sgActionsIndex {
-                    actions.insert(.separator, at: sgActionsIndex)
-                } else {
-                    actions.append(.separator)
-                }
-            }
-            
-            var popSGItems: (() -> Void)? = nil
-            sgActions.insert(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Common_Back, icon: { theme in
-                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Back"), color: theme.actionSheet.primaryTextColor)
-            }, iconPosition: .left, action: { _, _ in
-                popSGItems?()
-            })), at: 0)
-            sgActions.insert(.separator, at: 1)
-            
-            let swiftgramSubMenu: ContextMenuItem = .action(ContextMenuActionItem(text: "WyGram", icon: { theme in
-                return PresentationResourcesSettings.wygramContextMenu
-            }, action: { c, f in
-                popSGItems = { [weak c] in
-                    c?.popItems()
-                }
-                c?.pushItems(items: .single(ContextController.Items(content: .list(sgActions))))
-            }))
-            
-            if let sgActionsIndex = sgActionsIndex {
-                actions.insert(swiftgramSubMenu, at: sgActionsIndex + 1)
-            } else {
-                actions.append(swiftgramSubMenu)
-            }
-        }
-        
+        // Hidden context actions stay hidden; the unused branded submenu is removed.
+        _ = sgActions
+
         var reactionCount = 0
         for reaction in mergedMessageReactionsAndPeers(accountPeerId: context.account.peerId, accountPeer: nil, message: message).reactions {
             reactionCount += Int(reaction.count)

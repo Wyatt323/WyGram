@@ -8,7 +8,7 @@ use this recipe for the current source.
 
 ## Local unsigned build
 
-The 1.0.12 (19) package uses Apple Silicon, Xcode 27.2 (27B52), iOS 27.2 SDK,
+The 1.0.13 (20) package uses Apple Silicon, Xcode 27.2 (27B52), iOS 27.2 SDK,
 Metal Toolchain 27B47 and Bazel 8.4.2. Minimum supported iOS is 15.0.
 
 ```sh
@@ -29,7 +29,7 @@ python3 build-system/Make/Make.py \
   --bazelUserRoot="$PWD/../wygram-bazel" --overrideXcodeVersion build \
   --configurationPath=build-system/wygram.local.json \
   --xcodeManagedCodesigning --unsigned \
-  --configuration=release_arm64 --buildNumber=19
+  --configuration=release_arm64 --buildNumber=20
 ```
 
 The result is `bazel-bin/Telegram/WyGram.ipa`. Run the setup script after updating

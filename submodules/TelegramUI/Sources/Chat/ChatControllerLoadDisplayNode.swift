@@ -2098,6 +2098,8 @@ extension ChatControllerImpl {
                 // MARK: Swiftgram
                 if let mode = mode {
                     switch (mode) {
+                        case wygramRepeatMessageMode:
+                            strongSelf.wygramRepeatMessage(messages[0])
                         case "forwardMessagesToCloudWithNoNamesAndOpen":
                             strongSelf.forwardMessagesToCloud(messageIds: forwardMessageIds, removeNames: true, openCloud: true)
                         case "forwardMessagesToCloud":
