@@ -1,6 +1,6 @@
 # WyGram contributor notes
 
-- Current version: 1.1.0 (build 22). Increment patch version and independent build number for each new release. Synchronize main app and all extensions.
+- Current version: 1.1.1 (build 23). Increment patch version and independent build number for each new release. Synchronize main app and all extensions.
 - IPA filenames: `WyGram <version>.ipa`; GitHub normalizes spaces to periods in stored names. Preserve old releases. See `docs/wygram-build.md`.
 - Keep `app.wygram.ios` and existing application data/signing identity for in-place upgrades.
 - Never commit private API configuration, signing keys, provisioning profiles, account databases, build logs or generated outputs.
@@ -16,3 +16,6 @@
 - System share fallback completion closes the extension and preserves its published attachments for manual opening of WyGram; explicit Cancel Share removes them. Do not require a Share extension to open its containing app. Select an inbox prepared by the main app rather than blindly choosing the first container, and preserve account storage. A storage marker and simulator probes do not prove a signed device has common App Group permissions. See `docs/wygram-system-share.md` and `Tests/ShareInboxHandoffProbe`.
 
 - Version 1.1.0 adds an explicit user-enabled direct-share setup. Before any account/key/logger opens on the next cold start, an exclusively renamed complete store may move to an authorised common App Group. Never enable automatically, copy session keys, merge/overwrite an existing destination, or silently create an empty account after an interrupted move. Keep the recovery journal and exact-directory identity checks.
+
+- Share inbox presentation continuously observes ready/unlocked/active state and waits for an attached root window. Keep bounded retries, cross-container oldest-first handling, explicit manual refresh and account-change cancellation. Never consume a pending batch merely because readiness or window attachment is delayed.
+- Direct-share setup chooses a vacant authorised common group, including a safe alternative for an old occupied request. Do not overwrite even empty existing stores. Native sharing requires the main app's positive shared-storage marker. Main and extension inbox discovery use the same actual signing-group intersection.

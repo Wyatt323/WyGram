@@ -107,6 +107,33 @@ import SGAppGroupIdentifier
             check("both-stores-preserved-\(occupied)", snapshot(local.appendingPathComponent("telegram-data")) == before && snapshot(target) == other && d.string(forKey: WyGramDirectShare.resultKey) == "occupied")
         }
         do {
+            let (local, occupied, d) = try fixture("occupied-first-free-second")
+            let occupiedStore = occupied.url.appendingPathComponent("telegram-data")
+            try fm.createDirectory(at: occupiedStore, withIntermediateDirectories: true)
+            try Data("OTHER ACCOUNT".utf8).write(to: occupiedStore.appendingPathComponent("other"))
+            let freeURL = occupied.url.deletingLastPathComponent().appendingPathComponent("free")
+            try fm.createDirectory(at: freeURL, withIntermediateDirectories: true)
+            let free = WyGramDirectShare.Group(identifier: "group.wygram.free", url: freeURL)
+            let source = local.appendingPathComponent("telegram-data")
+            let before = snapshot(source), originalInode = inode(source), other = snapshot(occupiedStore)
+            check("setup-skips-occupied-first-candidate", WyGramDirectShare.vacantGroups([occupied, free]).map { $0.identifier } == [free.identifier])
+            // A request saved by 1.1.0 may still name the first occupied group.
+            _ = WyGramDirectShare.request(group: occupied, defaults: d)
+            let selected = try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [occupied, free], defaults: d)
+            check("old-request-retries-free-common-group", selected?.identifier == free.identifier && d.string(forKey: WyGramDirectShare.groupKey) == free.identifier)
+            check("alternative-group-keeps-directory-identity", inode(free.url.appendingPathComponent("telegram-data")) == originalInode && snapshot(free.url.appendingPathComponent("telegram-data")) == before)
+            check("occupied-other-store-never-touched", snapshot(occupiedStore) == other)
+        }
+        do {
+            let (local, group, d) = try fixture("dangling-destination")
+            let target = group.url.appendingPathComponent("telegram-data")
+            try fm.createSymbolicLink(at: target, withDestinationURL: group.url.appendingPathComponent("missing"))
+            check("dangling-destination-not-vacant", WyGramDirectShare.vacantGroups([group]).isEmpty)
+            let before = snapshot(local.appendingPathComponent("telegram-data"))
+            _ = WyGramDirectShare.request(group: group, defaults: d)
+            check("dangling-destination-refused-without-account-change", try WyGramDirectShare.performRequestedTransition(localDirectory: local, groups: [group], defaults: d) == nil && snapshot(local.appendingPathComponent("telegram-data")) == before)
+        }
+        do {
             let (local, group, d) = try fixture("move-denied")
             let before = snapshot(local.appendingPathComponent("telegram-data"))
             _ = WyGramDirectShare.request(group: group, defaults: d)

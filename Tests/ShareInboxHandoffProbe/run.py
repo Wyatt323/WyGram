@@ -17,7 +17,7 @@ BUNDLE='app.wygram.shareprobe'
 def run(*args, check=True, **kwargs):
  return subprocess.run([str(a) for a in args], capture_output=True, text=True, check=check, **kwargs)
 common=[SWIFTC,'-swift-version','5','-sdk',SDK,'-target','arm64-apple-ios15.0-simulator','-module-cache-path',OUT/'module-cache']
-r=run(*common,'-parse-as-library','-emit-module','-emit-library','-static','-module-name','SGAppGroupIdentifier',SOURCE/'Swiftgram/SGAppGroupIdentifier/Sources/WyGramPushSupport.swift',SOURCE/'Swiftgram/SGAppGroupIdentifier/Sources/WyGramShareInbox.swift','-emit-module-path',OUT/'SGAppGroupIdentifier.swiftmodule','-o',OUT/'libSGAppGroupIdentifier.a',check=False)
+r=run(*common,'-parse-as-library','-emit-module','-emit-library','-static','-module-name','SGAppGroupIdentifier',SOURCE/'Swiftgram/SGAppGroupIdentifier/Sources/WyGramPushSupport.swift',SOURCE/'Swiftgram/SGAppGroupIdentifier/Sources/WyGramShareInbox.swift',SOURCE/'Swiftgram/SGAppGroupIdentifier/Sources/WyGramDirectShare.swift','-emit-module-path',OUT/'SGAppGroupIdentifier.swiftmodule','-o',OUT/'libSGAppGroupIdentifier.a',check=False)
 (OUT/'compile-support.log').write_text(r.stdout+r.stderr)
 assert r.returncode==0, r.stderr
 r=run(*common, '-parse-as-library','-I',OUT,'-L',OUT,'-lSGAppGroupIdentifier','-module-name','ShareProbe',SOURCE/'Telegram/Share/WyGramShareFallbackController.swift',HERE/'Probe.swift','-o',OUT/'ShareProbe.app/ShareProbe',check=False)

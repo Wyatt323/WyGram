@@ -72,7 +72,7 @@ import SGAppGroupIdentifier
         try! FileManager.default.createDirectory(at: group.appendingPathComponent("telegram-data/accounts-metadata"), withIntermediateDirectories: true)
         check("missing-account-key-does-not-generate-replacement", !WyGramShareInbox.canUseSharedAccount(group: group, inboxes: [inbox]) && !FileManager.default.fileExists(atPath: group.appendingPathComponent("telegram-data/.tempkey").path))
         try! Data(repeating: 0x41, count: 48).write(to: group.appendingPathComponent("telegram-data/.tempkey"))
-        check("shared-account-retains-native-flow", WyGramShareInbox.canUseSharedAccount(group: group, inboxes: [inbox]))
+        check("unpublished-account-store-not-used-by-extension", !WyGramShareInbox.canUseSharedAccount(group: group, inboxes: [inbox]))
         inbox.publishStorage(shared: false)
         check("private-account-forces-file-handoff", !WyGramShareInbox.canUseSharedAccount(group: group, inboxes: [inbox]))
         inbox.publishStorage(shared: true)

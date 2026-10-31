@@ -19,6 +19,13 @@ public struct WyGramShareInbox {
     public static let lifetime: TimeInterval = 3600
     public static let maximumBytes: Int64 = 2 * 1024 * 1024 * 1024
     public static let maximumItems = 100
+    public static let importRequested = Notification.Name("WyGramShareInbox.importRequested")
+    public static let importStatusKey = "wygram.shareInbox.importStatus"
+
+    // Main-app diagnostics contain no filenames, paths, account or chat IDs.
+    public static func recordImportStatus(_ status: String) {
+        UserDefaults.standard.set(status, forKey: self.importStatusKey)
+    }
 
     public init(directory: URL) {
         self.directory = directory
@@ -29,20 +36,15 @@ public struct WyGramShareInbox {
         guard let identifier = main.bundleIdentifier, !identifier.isEmpty,
               identifier.rangeOfCharacter(from: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_").inverted) == nil,
               !identifier.contains("..") else { return [] }
-        let mainGroups = WyGramPushCapabilities.load(main).groups
-        let ownGroups = WyGramPushCapabilities.load().groups
-        let isExtension = Bundle.main.bundleURL.pathExtension == "appex"
-        let canonical = "group." + identifier
-        let candidates = [canonical] + mainGroups.filter { $0 != canonical }
-        return candidates.compactMap { group in
-            if isExtension && !ownGroups.isEmpty && !ownGroups.contains(group) { return nil }
-            guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { return nil }
-            return WyGramShareInbox(directory: root.appendingPathComponent("WyGramShareInbox", isDirectory: true).appendingPathComponent(identifier, isDirectory: true))
+        // Both processes must discover the same actually signed intersection,
+        // rather than different profile/canonical-name candidate lists.
+        return WyGramDirectShare.availableGroups().map { group in
+            return WyGramShareInbox(directory: group.url.appendingPathComponent("WyGramShareInbox", isDirectory: true).appendingPathComponent(identifier, isDirectory: true))
         }
     }
 
     public static func canUseSharedAccount(group: URL?, inboxes: [WyGramShareInbox]) -> Bool {
-        guard let group, !inboxes.contains(where: { $0.mainUsesLocalStorage }) else { return false }
+        guard let group, inboxes.contains(where: { $0.storageMode == "shared" }), !inboxes.contains(where: { $0.mainUsesLocalStorage }) else { return false }
         let root = group.appendingPathComponent("telegram-data", isDirectory: true)
         let key = root.appendingPathComponent(".tempkey")
         // Do not let an extension generate a replacement encryption key for an

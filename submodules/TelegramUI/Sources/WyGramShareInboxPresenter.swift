@@ -13,48 +13,61 @@ import PresentationDataUtils
 
 final class WyGramShareInboxPresenter {
     private let readyDisposable = MetaDisposable()
-    private var presenting = false
+    private weak var context: AuthorizedApplicationContext?
+    private var coordinator: WyGramShareInboxCoordinator?
     private var controller: ViewController?
+    private var importObserver: NSObjectProtocol?
+
+    init() {
+        self.importObserver = NotificationCenter.default.addObserver(forName: WyGramShareInbox.importRequested, object: nil, queue: .main) { [weak self] _ in
+            self?.coordinator?.refresh()
+        }
+    }
 
     func check(context: AuthorizedApplicationContext) {
-        guard !self.presenting, let lock = context.context.sharedContext.appLockContext as? AppLockContextImpl else { return }
-        self.readyDisposable.set((combineLatest(context.isReady.get(), lock.isCurrentlyLocked)
-        |> filter { ready, locked in ready && !locked }
-        |> take(1)
-        |> deliverOnMainQueue).start(next: { [weak self, weak context] _, _ in
-            guard let self, let context, !self.presenting, UIApplication.shared.applicationState == .active else { return }
-            self.presenting = true
-            Queue.concurrentDefaultQueue().async { [weak self, weak context] in
-                let entry = WyGramShareInbox.current().compactMap { inbox -> (WyGramShareInbox, WyGramShareInbox.Batch)? in
-                    guard let batch = inbox.pending().first else { return nil }
-                    return (inbox, batch)
-                }.first
-                Queue.mainQueue().async {
-                    guard let self else { return }
-                    guard let context, let (inbox, batch) = entry, UIApplication.shared.applicationState == .active else {
-                        self.presenting = false
-                        return
-                    }
-                    // Recheck the lock after disk IO; never put a recipient list
-                    // over the passcode screen on a background/foreground race.
-                    self.readyDisposable.set((lock.isCurrentlyLocked
-                    |> filter { !$0 }
-                    |> take(1)
-                    |> deliverOnMainQueue).start(next: { [weak self, weak context] _ in
-                        guard let self, let context, UIApplication.shared.applicationState == .active else {
-                            self?.presenting = false
-                            return
-                        }
-                        self.present(context: context, inbox: inbox, batch: batch)
-                    }))
-                }
-            }
+        if self.context === context {
+            self.coordinator?.refresh()
+            return
+        }
+        self.coordinator?.stop()
+        self.context = context
+        self.controller?.dismiss()
+        self.controller = nil
+        guard let lock = context.context.sharedContext.appLockContext as? AppLockContextImpl else { return }
+        let coordinator = WyGramShareInboxCoordinator(canPresent: { [weak context] in
+            guard let context else { return false }
+            return UIApplication.shared.applicationState == .active && context.rootController.currentWindow != nil
+        }, present: { [weak self, weak context] entry in
+            guard let self, let context else { return false }
+            return self.present(context: context, inbox: entry.inbox, batch: entry.batch)
+        }, status: { status in
+            WyGramShareInbox.recordImportStatus(status)
+        })
+        self.coordinator = coordinator
+        // Keep observing all three gates. A one-shot ready signal can fire
+        // while the scene is inactive or before its root is in a window.
+        self.readyDisposable.set((combineLatest(context.isReady.get(), lock.isCurrentlyLocked, context.context.sharedContext.applicationBindings.applicationIsActive)
+        |> deliverOnMainQueue).start(next: { [weak coordinator] ready, locked, active in
+            if !ready { WyGramShareInbox.recordImportStatus("waiting-account") }
+            else if locked { WyGramShareInbox.recordImportStatus("locked") }
+            else if !active { WyGramShareInbox.recordImportStatus("inactive") }
+            coordinator?.setEligible(ready && !locked && active)
         }))
     }
 
-    private func present(context: AuthorizedApplicationContext, inbox: WyGramShareInbox, batch: WyGramShareInbox.Batch) {
-        guard let window = context.rootController.currentWindow else { self.presenting = false; return }
+    func deactivate() {
+        self.readyDisposable.set(nil)
+        self.coordinator?.stop()
+        self.coordinator = nil
+        self.context = nil
+        self.controller?.dismiss()
+        self.controller = nil
+    }
+
+    private func present(context: AuthorizedApplicationContext, inbox: WyGramShareInbox, batch: WyGramShareInbox.Batch) -> Bool {
+        guard UIApplication.shared.applicationState == .active, let window = context.rootController.currentWindow else { return false }
         context.rootController.view.endEditing(true)
+        let coordinator = self.coordinator
         let params = ShareControllerParams(subject: .fromExternal(batch.items.count, { [weak self, weak context] peerIds, threadIds, requireStars, text, account, silently in
             let sending: Signal<ShareControllerExternalStatus, ShareControllerError>
             if !peerIds.isEmpty, let appAccount = account as? ShareControllerAppAccountContext {
@@ -83,33 +96,38 @@ final class WyGramShareInboxPresenter {
             return .single(.preparing(false))
             |> then(sending)
             |> `catch` { _ -> Signal<ShareControllerExternalStatus, ShareControllerError> in
-                Queue.mainQueue().async {
-                    guard let self else { return }
-                    self.controller?.dismiss(completion: {
-                        self.controller = nil
-                        self.presenting = false
-                        guard let context else { return }
-                        let presentationData = context.context.sharedContext.currentPresentationData.with { $0 }
-                        let alert = textAlertController(context: context.context, title: "文件分享未完成", text: "文件未能完整加入发送队列。请到目标聊天确认发送情况，再通过“附件 → 文件”重试。", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
-                        context.rootController.currentWindow?.present(alert, on: .root, blockInteraction: false, completion: {})
-                    })
+                Queue.concurrentDefaultQueue().async {
+                    // Retire this batch before allowing another scan, including
+                    // when enqueueing failed after a partially accepted send.
+                    inbox.remove(id: batch.id)
+                    Queue.mainQueue().async {
+                        guard let self, let context, self.context === context else { return }
+                        self.controller?.dismiss(completion: {
+                            self.controller = nil
+                            coordinator?.finished()
+                            let presentationData = context.context.sharedContext.currentPresentationData.with { $0 }
+                            let alert = textAlertController(context: context.context, title: "文件分享未完成", text: "文件未能完整加入发送队列。请到目标聊天确认发送情况，再通过“附件 → 文件”重试。", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
+                            context.rootController.currentWindow?.present(alert, on: .root, blockInteraction: false, completion: {})
+                        })
+                    }
                 }
-                Queue.concurrentDefaultQueue().async { inbox.remove(id: batch.id) }
                 return .never()
             }
         }), fromForeignApp: true, externalShare: false, dismissed: { [weak self, weak context] _ in
+            // Account changes/logout dismiss UI without consuming attachments.
+            guard let self, let context, self.context === context else { return }
             // Copies already accepted into the account's MediaBox outlive the
             // inbox. Cancellation removes only this pending file handoff.
-            Queue.concurrentDefaultQueue().async { inbox.remove(id: batch.id) }
-            self?.presenting = false
-            self?.controller = nil
-            if let context { Queue.mainQueue().after(0.5) { [weak self, weak context] in
-                if let context { self?.check(context: context) }
-            } }
+            self.controller = nil
+            Queue.concurrentDefaultQueue().async {
+                inbox.remove(id: batch.id)
+                Queue.mainQueue().after(0.5) { coordinator?.finished() }
+            }
         })
         let controller = context.context.sharedContext.makeShareController(context: context.context, params: params)
         self.controller = controller
         window.present(controller, on: .root, blockInteraction: false, completion: {})
+        return true
     }
 
     private static func prepare(inbox: WyGramShareInbox, batch: WyGramShareInbox.Batch, account: Account) -> Signal<[TelegramMediaFile], ShareControllerError> {
@@ -142,5 +160,9 @@ final class WyGramShareInboxPresenter {
         }
     }
 
-    deinit { self.readyDisposable.dispose() }
+    deinit {
+        self.readyDisposable.dispose()
+        self.coordinator?.stop()
+        if let observer = self.importObserver { NotificationCenter.default.removeObserver(observer) }
+    }
 }

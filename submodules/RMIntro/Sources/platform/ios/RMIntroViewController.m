@@ -106,6 +106,7 @@ typedef enum {
     
     UIView *_wrapperView;
     UIView *_startButton;
+    UIImageView *_wygramLogoView;
     
     bool _loadedView;
 }
@@ -230,8 +231,9 @@ typedef enum {
 }
 
 - (void)animateIn {
-    CGPoint logoTargetPosition = _glkView.center;
-    _glkView.center = CGPointMake(self.view.bounds.size.width / 2.0, self.view.bounds.size.height / 2.0);
+    UIView *logoView = _wygramLogoView.image != nil && _currentPage == 0 ? _wygramLogoView : _glkView;
+    CGPoint logoTargetPosition = logoView.center;
+    logoView.center = CGPointMake(self.view.bounds.size.width / 2.0, self.view.bounds.size.height / 2.0);
     
     RMIntroPageView *firstPage = (RMIntroPageView *)[_pageViews firstObject];
     CGPoint headerTargetPosition = firstPage.headerLabel.center;
@@ -246,24 +248,24 @@ typedef enum {
     CGPoint buttonTargetPosition = _startButton.center;
     _startButton.center = CGPointMake(buttonTargetPosition.x, buttonTargetPosition.y + 220.0);
     
-    _glkView.transform = CGAffineTransformMakeScale(0.66, 0.66);
+    logoView.transform = CGAffineTransformMakeScale(0.66, 0.66);
         
     [UIView animateWithDuration:0.65 delay:0.15 usingSpringWithDamping:1.2f initialSpringVelocity:0.0 options:kNilOptions animations:^{
-        _glkView.center = logoTargetPosition;
+        logoView.center = logoTargetPosition;
         firstPage.headerLabel.center = headerTargetPosition;
         firstPage.descriptionLabel.center = descriptionTargetPosition;
         _pageControl.center = pageControlTargetPosition;
         _startButton.center = buttonTargetPosition;
-        _glkView.transform = CGAffineTransformIdentity;
+        logoView.transform = CGAffineTransformIdentity;
     } completion:nil];
     
-    _glkView.alpha = 0.0;
+    logoView.alpha = 0.0;
     _pageScrollView.alpha = 0.0;
     _pageControl.alpha = 0.0;
     _startButton.alpha = 0.0;
     
     [UIView animateWithDuration:0.3 delay:0.15 options:kNilOptions animations:^{
-        _glkView.alpha = 1.0;
+        logoView.alpha = 1.0;
         _pageScrollView.alpha = 1.0;
         _pageControl.alpha = 1.0;
         _startButton.alpha = 1.0;
@@ -303,6 +305,7 @@ typedef enum {
         
         [self setupGL];
         [self.view addSubview:_glkView];
+        [self updateWyGramLogoVisibility];
         
         [self startTimer];
         _isOpenGLLoaded = true;
@@ -387,9 +390,30 @@ typedef enum {
     _pageControl.pageIndicatorTintColor = _regularDotColor;
     _pageControl.currentPageIndicatorTintColor = _highlightedDotColor;
     [_wrapperView addSubview:_pageControl];
+
+    // Use the fixed, full-bleed WyGram artwork independently of OpenGL. The
+    // first page must also show its branding when the legacy renderer is absent.
+    _wygramLogoView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"WyGramWelcomeLogo.png"]];
+    _wygramLogoView.contentMode = UIViewContentModeScaleAspectFit;
+    _wygramLogoView.clipsToBounds = true;
+    _wygramLogoView.layer.cornerCurve = kCACornerCurveContinuous;
+    _wygramLogoView.userInteractionEnabled = false;
+    _wygramLogoView.accessibilityIdentifier = @"Auth.Welcome.WyGramLogo";
+    [self.view addSubview:_wygramLogoView];
+    [self updateWyGramLogoVisibility];
 }
 
 - (UIView *)createAnimationSnapshot {
+    if (_wygramLogoView.image != nil && _wygramLogoView.alpha > 0.0) {
+        UIImageView *imageView = [[UIImageView alloc] initWithImage:_wygramLogoView.image];
+        imageView.frame = _wygramLogoView.frame;
+        imageView.contentMode = _wygramLogoView.contentMode;
+        imageView.clipsToBounds = true;
+        imageView.layer.cornerRadius = _wygramLogoView.layer.cornerRadius;
+        imageView.layer.cornerCurve = _wygramLogoView.layer.cornerCurve;
+        imageView.alpha = _wygramLogoView.alpha;
+        return imageView;
+    }
     UIImage *image = _glkView.snapshot;
     UIImageView *imageView = [[UIImageView alloc] initWithFrame:_glkView.frame];
     imageView.image = image;
@@ -570,6 +594,27 @@ typedef enum {
     [_pageViews enumerateObjectsUsingBlock:^(UIView *pageView, NSUInteger index, __unused BOOL *stop) {
         pageView.frame = CGRectMake(index * self.view.bounds.size.width, (pageY - statusBarHeight), self.view.bounds.size.width, 150);
     }];
+
+    RMIntroPageView *firstPage = _pageViews.firstObject;
+    CGRect headerFrame = [firstPage.headerLabel convertRect:firstPage.headerLabel.bounds toView:self.view];
+    CGFloat logoBottom = CGRectGetMinY(headerFrame) - 20.0;
+    CGFloat safeTop = MAX(20.0, self.view.safeAreaInsets.top) + 20.0;
+    CGFloat preferredSize = self.traitCollection.userInterfaceIdiom == UIUserInterfaceIdiomPad ? 176.0 : 148.0;
+    CGFloat logoSize = floor(MAX(0.0, MIN(preferredSize, MIN(self.view.bounds.size.width - 64.0, logoBottom - safeTop))));
+    _wygramLogoView.frame = CGRectMake(floor((self.view.bounds.size.width - logoSize) / 2.0), logoBottom - logoSize, logoSize, logoSize);
+    _wygramLogoView.layer.cornerRadius = logoSize * 0.24;
+    [self updateWyGramLogoVisibility];
+}
+
+- (void)updateWyGramLogoVisibility {
+    if (_wygramLogoView.image == nil) {
+        return;
+    }
+    CGFloat width = _pageScrollView.bounds.size.width;
+    CGFloat progress = width > 0.0 ? MIN(1.0, MAX(0.0, _pageScrollView.contentOffset.x / width)) : 0.0;
+    _wygramLogoView.alpha = 1.0 - progress;
+    _glkView.alpha = progress;
+    [self.view bringSubviewToFront:_wygramLogoView];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -711,6 +756,7 @@ NSInteger _current_page_end;
     }
     
     [_pageControl setCurrentPage:_currentPage];
+    [self updateWyGramLogoVisibility];
 }
 
 - (void)alternativeLanguageButtonPressed {

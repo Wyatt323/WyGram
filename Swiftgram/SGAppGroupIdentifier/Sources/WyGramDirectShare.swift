@@ -53,6 +53,16 @@ public enum WyGramDirectShare {
         return defaults.synchronize()
     }
 
+    public static func vacantGroups(_ groups: [Group]) -> [Group] {
+        return groups.filter { group in
+            var value = stat()
+            // lstat also rejects dangling symlinks; a failed access check is
+            // not evidence that replacing the destination is safe.
+            return lstat(group.url.appendingPathComponent("telegram-data").path, &value) != 0 && errno == ENOENT
+                && self.identity(group.url) != nil && FileManager.default.isWritableFile(atPath: group.url.path)
+        }
+    }
+
     private struct Journal: Codable {
         let group: String
         let device: Int64
@@ -116,9 +126,16 @@ public enum WyGramDirectShare {
             return nil
         }
         guard let requested = defaults.string(forKey: self.requestKey) else { return nil }
-        guard let group = groups.first(where: { $0.identifier == requested }) else {
+        guard let requestedGroup = groups.first(where: { $0.identifier == requested }) else {
             defaults.removeObject(forKey: self.requestKey)
             defaults.set("permissions", forKey: self.resultKey)
+            return nil
+        }
+        // All candidates have the same verified common app/extension rights.
+        // An occupied first candidate must not hide another unused directory.
+        guard let group = self.vacantGroups([requestedGroup] + groups.filter { $0.identifier != requested }).first else {
+            defaults.removeObject(forKey: self.requestKey)
+            defaults.set("occupied", forKey: self.resultKey)
             return nil
         }
         let destination = group.url.appendingPathComponent("telegram-data")
@@ -135,7 +152,7 @@ public enum WyGramDirectShare {
             defaults.set("occupied", forKey: self.resultKey)
             return nil
         }
-        let journal = Journal(group: requested, device: device, inode: inode)
+        let journal = Journal(group: group.identifier, device: device, inode: inode)
         try JSONEncoder().encode(journal).write(to: journalURL, options: .atomic)
         let descriptor = open(journalURL.path, O_RDONLY)
         if descriptor >= 0 { _ = fsync(descriptor); close(descriptor) }

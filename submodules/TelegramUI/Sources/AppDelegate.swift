@@ -1392,6 +1392,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 contextValue.context.account.shouldExplicitelyKeepWorkerConnections.set(.single(false))
                 contextValue.context.account.shouldKeepBackgroundDownloadConnections.set(.single(false))
             }
+            if context == nil { self.shareInboxPresenter.deactivate() }
             self.contextValue = context
             if let context = context {
                 setupLegacyComponents(context: context.context)
