@@ -1,9 +1,128 @@
-# WyGram 1.0.0
+# WyGram 1.0.12
 
-WyGram 的 iOS 客户端构建仓库。基于 [Swiftgram/Telegram-iOS](https://github.com/Swiftgram/Telegram-iOS) 的固定提交 `cf8b23beaaac4126a396337ac2d5be13f9f76b66`，构建时应用本仓库的源码补丁。
+WyGram is an iOS Telegram client based on [Swiftgram/Telegram-iOS](https://github.com/Swiftgram/Telegram-iOS). Its fixed application icon, internal branding and top badge use the artwork supplied for WyGram.
 
-在仓库 Settings → Secrets and variables → Actions 添加 `TG_API_ID` 和 `TG_API_HASH`，然后在 Actions → Build WyGram IPA → Run workflow 启动。API 信息仅从 Secrets 写入临时构建配置，不应提交到源码。
+The Swiftgram client-side Pro settings are available without a purchase in this fork. Telegram Premium and any feature enforced by Telegram or Swiftgram servers are outside this change. See [WYGRAM.md](WYGRAM.md) for build requirements and testing notes.
 
-成功后在该次运行的 Artifacts 下载 `WyGram-1.0.0-unsigned`，里面包含 IPA 和 SHA-256 校验值。IPA 使用 arm64 真机架构，安装前需要自行签名。仓库使用标准 macOS 26 runner 与 Xcode 26.2，不自动发布 Release。
+Download the current IPA from [Releases](https://github.com/Wyatt323/WyGram/releases/latest). The 1.0.12 (19) release adds on-device signed updates from this repository. Install this first updater-enabled version manually with LCSign, then configure the same certificate and profiles on the phone. See [online updates](docs/wygram-online-updates.md).
 
-本地 Pro 功能免费可用，沿用上游图标。已移除启动时的订阅状态查询并增加相关请求超时；后台恢复后持续加载的问题仍需真机测试确认。Telegram 服务端会员功能不受客户端修改影响。
+For the current local build and release recipe, see [Build WyGram](docs/wygram-build.md). The instructions below retain the upstream compilation guide.
+
+# Telegram iOS Source Code Compilation Guide
+
+We welcome all developers to use our API and source code to create applications on our platform.
+There are several things we require from **all developers** for the moment.
+
+# Creating your Telegram Application
+
+1. [**Obtain your own api_id**](https://core.telegram.org/api/obtaining_api_id) for your application.
+2. Please **do not** use the name Telegram for your app — or make sure your users understand that it is unofficial.
+3. Kindly **do not** use our standard logo (white paper plane in a blue circle) as your app's logo.
+3. Please study our [**security guidelines**](https://core.telegram.org/mtproto/security_guidelines) and take good care of your users' data and privacy.
+4. Please remember to publish **your** code too in order to comply with the licences.
+
+# Quick Compilation Guide
+
+## Get the Code
+
+```
+git clone --recursive -j8 https://github.com/Wyatt323/WyGram.git
+cd WyGram
+python3 scripts/wygram_setup.py
+```
+
+## Setup Xcode
+
+Install Xcode (directly from https://developer.apple.com/download/applications or using the App Store).
+
+## Adjust Configuration
+
+1. Generate a random identifier:
+```
+openssl rand -hex 8
+```
+2. Create a new Xcode project. Use `WyGram` as the Product Name. Use `org.{identifier from step 1}` as the Organization Identifier.
+3. Open `Keychain Access` and navigate to `Certificates`. Locate `Apple Development: your@email.address (XXXXXXXXXX)` and double tap the certificate. Under `Details`, locate `Organizational Unit`. This is the Team ID.
+4. Edit `build-system/template_minimal_development_configuration.json`. Use data from the previous steps.
+
+## Generate an Xcode project
+
+```
+python3 build-system/Make/Make.py \
+    --cacheDir="$HOME/telegram-bazel-cache" \
+    generateProject \
+    --configurationPath=build-system/template_minimal_development_configuration.json \
+    --xcodeManagedCodesigning
+```
+
+# Advanced Compilation Guide
+
+## Xcode
+
+1. Copy and edit `build-system/appstore-configuration.json`.
+2. Copy `build-system/fake-codesigning`. Create and download provisioning profiles, using the `profiles` folder as a reference for the entitlements.
+3. Generate an Xcode project:
+```
+python3 build-system/Make/Make.py \
+    --cacheDir="$HOME/telegram-bazel-cache" \
+    generateProject \
+    --configurationPath=configuration_from_step_1.json \
+    --codesigningInformationPath=directory_from_step_2
+```
+
+## IPA
+
+1. Repeat the steps from the previous section. Use distribution provisioning profiles.
+2. Run:
+```
+python3 build-system/Make/Make.py \
+    --cacheDir="$HOME/telegram-bazel-cache" \
+    build \
+    --configurationPath=...see previous section... \
+    --codesigningInformationPath=...see previous section... \
+    --buildNumber=100001 \
+    --configuration=release_arm64
+```
+
+# FAQ
+
+## Xcode is stuck at "build-request.json not updated yet"
+
+Occasionally, you might observe the following message in your build log:
+```
+"/Users/xxx/Library/Developer/Xcode/DerivedData/Telegram-xxx/Build/Intermediates.noindex/XCBuildData/xxx.xcbuilddata/build-request.json" not updated yet, waiting...
+```
+
+Should this occur, simply cancel the ongoing build and initiate a new one.
+
+## Telegram_xcodeproj: no such package 
+
+Following a system restart, the auto-generated Xcode project might encounter a build failure accompanied by this error:
+```
+ERROR: Skipping '@rules_xcodeproj_generated//generator/Telegram/Telegram_xcodeproj:Telegram_xcodeproj': no such package '@rules_xcodeproj_generated//generator/Telegram/Telegram_xcodeproj': BUILD file not found in directory 'generator/Telegram/Telegram_xcodeproj' of external repository @rules_xcodeproj_generated. Add a BUILD file to a directory to mark it as a package.
+```
+
+If you encounter this issue, re-run the project generation steps in the README.
+
+
+# Tips
+
+## Codesigning is not required for simulator-only builds
+
+Add `--disableProvisioningProfiles`:
+```
+python3 build-system/Make/Make.py \
+    --cacheDir="$HOME/telegram-bazel-cache" \
+    generateProject \
+    --configurationPath=path-to-configuration.json \
+    --codesigningInformationPath=path-to-provisioning-data \
+    --disableProvisioningProfiles
+```
+
+## Versions
+
+Each release is built using a specific Xcode version (see `versions.json`). The helper script checks the versions of the installed software and reports an error if they don't match the ones specified in `versions.json`. It is possible to bypass these checks:
+
+```
+python3 build-system/Make/Make.py --overrideXcodeVersion build ... # Don't check the version of Xcode
+```
