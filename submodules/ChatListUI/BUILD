@@ -9,6 +9,18 @@ sgsrcs = [
     "//Swiftgram/SGChatListSimpleSettingsSignal:SGChatListSimpleSettingsSignal",
 ]
 
+filegroup(
+    name = "WyGramLoadingProbeSources",
+    srcs = ["Sources/ChatListController.swift", "Sources/WyGramChatListLoading.swift"],
+    visibility = ["//Tests/ChatListLoadingProbe:__pkg__"],
+)
+
+filegroup(
+    name = "WyGramLoadingStateSource",
+    srcs = ["Sources/WyGramChatListLoading.swift"],
+    visibility = ["//Tests/ChatListLoadingProbe:__pkg__"],
+)
+
 swift_library(
     name = "ChatListUI",
     module_name = "ChatListUI",

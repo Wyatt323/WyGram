@@ -1,6 +1,6 @@
 # WyGram contributor notes
 
-- Current version: 1.1.3 (build 25). Increment patch version and independent build number for each new release. Synchronize main app and all extensions.
+- Current version: 1.1.4 (build 26). Increment patch version and independent build number for each new release. Synchronize main app and all extensions.
 - IPA filenames: `WyGram <version>.ipa`; GitHub normalizes spaces to periods in stored names. Preserve old releases. See `docs/wygram-build.md`.
 - Keep `app.wygram.ios` and existing application data/signing identity for in-place upgrades.
 - Never commit private API configuration, signing keys, provisioning profiles, account databases, build logs or generated outputs.
@@ -25,3 +25,5 @@
 - 1.1.2 uses a validated app-owned `WyGramAccounts/<UUID>` relative account parent for new direct-share requests, so occupied legacy root stores do not disable setup. Keep legacy root selections/journals compatible, exclusive atomic rename, positive location markers and missing-store refusal. Every account-consuming extension must resolve the same parent; never persist an absolute installation-container path. URL comparisons use standardized paths so directory trailing slashes cannot break readiness.
 
 - 1.1.3 verifies shared-location readiness with exclusive temporary create/write/read/remove operations instead of generic root writable hints. Canonicalize only OS-selected container root aliases; reject links in namespace/account children. Keep path-free stage/POSIX-code diagnostics and actual permission/space failures visible. A returned container URL alone is not proof of writable or cross-process rights.
+
+- 1.1.4: chat-list loading feedback now includes local readiness after 30+ seconds in the background and chat opening through destination `ready`. Keep real offline/connecting/updating labels ahead of local-loading text. Navigation-stack completion is not content readiness. Ignore repeated pending opens and invalidate stale local-query callbacks when backgrounded or leaving the list. `Tests/ChatListLoadingProbe` compiles the production coordinator and extracts the real header switch; 60 checks on two simulators and the production ChatListUI simulator module passed, without authenticated full navigation or physical-device suspension.

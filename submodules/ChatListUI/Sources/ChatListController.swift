@@ -132,6 +132,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private var badgeDisposable: Disposable?
     private var badgeIconDisposable: Disposable?
+    fileprivate let chatListLoading: WyGramChatListLoading
+    private let openChatPreparationDisposable = MetaDisposable()
     
     private var didAppear = false
     private var dismissSearchOnDisappear = false
@@ -252,6 +254,13 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.context = context
         self.controlsHistoryPreload = controlsHistoryPreload
         self.hideNetworkActivityStatus = hideNetworkActivityStatus
+        self.chatListLoading = WyGramChatListLoading(
+            foreground: context.sharedContext.applicationBindings.applicationInForeground,
+            readLocalState: { [weak account = context.account] in
+                guard let account else { return .single(true) }
+                return account.postbox.transaction { _ in true }
+            }
+        )
         
         self.location = location
         self.previewing = previewing
@@ -819,6 +828,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     deinit {
+        self.openChatPreparationDisposable.dispose()
         self.openMessageFromSearchDisposable.dispose()
         self.badgeDisposable?.dispose()
         self.badgeIconDisposable?.dispose()
@@ -1422,7 +1432,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         
         self.chatListDisplayNode.mainContainerNode.peerSelected = { [weak self] peer, threadId, animated, activateInput, promoInfo in
             Task { @MainActor [weak self] in
-                guard let self else {
+                guard let self, let openingId = self.chatListLoading.beginOpening() else {
                     return
                 }
                 
@@ -1435,15 +1445,17 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     )
                 }
                 
-                let _ = (combineLatest(queue: .mainQueue(),
+                self.openChatPreparationDisposable.set((combineLatest(queue: .mainQueue(),
                     self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id)),
                     forumSourcePeer
                 )
+                |> take(1)
                 |> deliverOnMainQueue).start(next: { [weak self] cachedPeerData, forumSourcePeer in
-                    guard let self else {
+                    guard let self, self.chatListLoading.isCurrentOpening(openingId) else {
                         return
                     }
                     guard let navigationController = self.navigationController as? NavigationController else {
+                        self.chatListLoading.finishOpening(openingId)
                         return
                     }
                     
@@ -1455,6 +1467,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     }
                     
                     if case .community = peer {
+                        self.chatListLoading.finishOpening(openingId)
                         self.openCommunityView(communityId: peer.id)
                         self.chatListDisplayNode.mainContainerNode.currentItemNode.clearHighlightAnimated(true)
                         return
@@ -1478,6 +1491,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     }
                     
                     if openAsInlineForum, case let .channel(channel) = peer, channel.isForum, threadId == nil {
+                        self.chatListLoading.finishOpening(openingId)
                         self.chatListDisplayNode.clearHighlightAnimated(true)
                         if self.chatListDisplayNode.inlineStackContainerNode?.location == .forum(peerId: channel.id) {
                             self.setInlineChatList(location: nil)
@@ -1507,7 +1521,13 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                                 isNotAvailable: false
                             )),
                             subject: subject,
-                            keepStack: .always
+                            keepStack: .always,
+                            completion: { [weak self] controller in
+                                self?.chatListLoading.waitForOpenedChat(openingId, ready: controller.ready.get())
+                            },
+                            chatListCompletion: { [weak self] controller in
+                                self?.chatListLoading.waitForOpenedChat(openingId, ready: controller.ready.get())
+                            }
                         ))
                         
                         self.chatListDisplayNode.clearHighlightAnimated(true)
@@ -1538,6 +1558,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                                 guard let self else {
                                     return
                                 }
+                                self.chatListLoading.waitForOpenedChat(openingId, ready: controller.ready.get())
                                 self.chatListDisplayNode.mainContainerNode.currentItemNode.clearHighlightAnimated(true)
                                 
                                 if let promoInfo = promoInfo {
@@ -1574,9 +1595,11 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                                         })
                                     }
                                 }
+                            }, chatListCompletion: { [weak self] controller in
+                                self?.chatListLoading.waitForOpenedChat(openingId, ready: controller.ready.get())
                             }))
                     }
-                })
+                }))
             }
         }
 
@@ -2870,6 +2893,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     override public func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        self.openChatPreparationDisposable.set(nil)
+        self.chatListLoading.cancelOpening()
         
         self.chatListDisplayNode.mainContainerNode.updateEnableAdjacentFilterLoading(false)
         
@@ -6961,13 +6986,15 @@ private final class ChatListLocationContext {
             }
         }
         #endif
+
+        let networkAndLoading = combineLatest(queue: .mainQueue(), networkState, parentController.chatListLoading.phase)
         
         switch location {
         case .chatList:
             if !hideNetworkActivityStatus {
                 self.titleDisposable = combineLatest(queue: .mainQueue(),
                     hideStoriesSignal,
-                    networkState,
+                    networkAndLoading,
                     hasProxy,
                     passcode,
                     containerNode.currentItemState,
@@ -6975,14 +7002,15 @@ private final class ChatListLocationContext {
                     peerStatus,
                     parentController.updatedPresentationData.1,
                     storyPostingAvailable
-                ).startStrict(next: { [weak self] hideStories, networkState, proxy, passcode, stateAndFilterId, isReorderingTabs, peerStatus, presentationData, storyPostingAvailable in
+                ).startStrict(next: { [weak self] hideStories, networkAndLoading, proxy, passcode, stateAndFilterId, isReorderingTabs, peerStatus, presentationData, storyPostingAvailable in
                     guard let self else {
                         return
                     }
                     
                     self.updateChatList(
                         hideStories: hideStories,
-                        networkState: networkState,
+                        networkState: networkAndLoading.0,
+                        localLoading: networkAndLoading.1,
                         proxy: proxy,
                         passcode: passcode,
                         stateAndFilterId: stateAndFilterId,
@@ -7213,6 +7241,7 @@ private final class ChatListLocationContext {
     private func updateChatList(
         hideStories: Bool,
         networkState: AccountNetworkState,
+        localLoading: WyGramChatListLoading.Phase,
         proxy: (Bool, Bool),
         passcode: (Bool, Bool),
         stateAndFilterId: (state: ChatListNodeState, filterId: Int32?),
@@ -7282,7 +7311,7 @@ private final class ChatListLocationContext {
             case .updating:
                 titleContent = NetworkStatusTitle(text: presentationData.strings.State_Updating, activity: true, hasProxy: false, connectsViaProxy: connectsViaProxy, isPasscodeSet: false, isManuallyLocked: false, peerStatus: peerStatus)
             case .online:
-                titleContent = NetworkStatusTitle(text: defaultTitle, activity: false, hasProxy: false, connectsViaProxy: connectsViaProxy, isPasscodeSet: false, isManuallyLocked: false, peerStatus: peerStatus)
+                titleContent = NetworkStatusTitle(text: localLoading == .idle ? defaultTitle : presentationData.strings.Channel_NotificationLoading, activity: localLoading != .idle, hasProxy: false, connectsViaProxy: connectsViaProxy, isPasscodeSet: false, isManuallyLocked: false, peerStatus: peerStatus)
             }
         } else {
             var isRoot = false
@@ -7404,7 +7433,7 @@ private final class ChatListLocationContext {
             case .updating:
                 titleContent = NetworkStatusTitle(text: presentationData.strings.State_Updating, activity: true, hasProxy: isRoot && hasProxy, connectsViaProxy: connectsViaProxy, isPasscodeSet: isRoot && isPasscodeSet, isManuallyLocked: isRoot && isManuallyLocked, peerStatus: peerStatus)
             case .online:
-                titleContent = NetworkStatusTitle(text: defaultTitle, activity: false, hasProxy: isRoot && hasProxy, connectsViaProxy: connectsViaProxy, isPasscodeSet: isRoot && isPasscodeSet, isManuallyLocked: isRoot && isManuallyLocked, peerStatus: peerStatus)
+                titleContent = NetworkStatusTitle(text: localLoading == .idle ? defaultTitle : presentationData.strings.Channel_NotificationLoading, activity: localLoading != .idle, hasProxy: isRoot && hasProxy, connectsViaProxy: connectsViaProxy, isPasscodeSet: isRoot && isPasscodeSet, isManuallyLocked: isRoot && isManuallyLocked, peerStatus: peerStatus)
             }
             
             if titleContent.hasProxy {
