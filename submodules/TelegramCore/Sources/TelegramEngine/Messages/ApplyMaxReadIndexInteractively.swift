@@ -161,8 +161,8 @@ func _internal_toggleForumThreadUnreadMarkInteractively(transaction: Transaction
             transaction.setMessageHistoryThreadInfo(peerId: peerId, threadId: threadId, info: entry)
         }
         
-        if peer.isForum {
-        } else if peer.isMonoForum {
+        if peer.isForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
+        } else if peer.isMonoForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
             if let inputPeer = apiInputPeer(peer), let subPeer = transaction.getPeer(PeerId(threadId)).flatMap(apiInputPeer) {
                 let _ = network.request(Api.functions.messages.markDialogUnread(flags: 1 << 0, parentPeer: inputPeer, peer: .inputDialogPeer(.init(peer: subPeer)))).start()
             }
@@ -178,11 +178,11 @@ func _internal_toggleForumThreadUnreadMarkInteractively(transaction: Transaction
                 transaction.setMessageHistoryThreadInfo(peerId: peerId, threadId: threadId, info: entry)
             }
             
-            if peer.isForum {
+            if peer.isForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                 if let inputPeer = apiInputPeer(peer) {
                     let _ = network.request(Api.functions.messages.readDiscussion(peer: inputPeer, msgId: Int32(clamping: threadId), readMaxId: messageIndex.id.id)).start()
                 }
-            } else if peer.isMonoForum {
+            } else if peer.isMonoForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                 if let inputPeer = apiInputPeer(peer), let subPeer = transaction.getPeer(PeerId(threadId)).flatMap(apiInputPeer) {
                     let _ = network.request(Api.functions.messages.readSavedHistory(parentPeer: inputPeer, peer: subPeer, maxId: messageIndex.id.id)).start()
                 }
@@ -214,11 +214,11 @@ func _internal_markForumThreadAsReadInteractively(transaction: Transaction, netw
             transaction.setMessageHistoryThreadInfo(peerId: peerId, threadId: threadId, info: entry)
         }
         
-        if peer.isForum {
+        if peer.isForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
             if let inputPeer = apiInputPeer(peer) {
                 let _ = network.request(Api.functions.messages.readDiscussion(peer: inputPeer, msgId: Int32(clamping: threadId), readMaxId: messageIndex.id.id)).start()
             }
-        } else if peer.isMonoForum {
+        } else if peer.isMonoForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
             if let inputPeer = apiInputPeer(peer), let subPeer = transaction.getPeer(PeerId(threadId)).flatMap(apiInputPeer) {
                 let _ = network.request(Api.functions.messages.readSavedHistory(parentPeer: inputPeer, peer: subPeer, maxId: messageIndex.id.id)).start()
             }
@@ -256,11 +256,11 @@ func _internal_togglePeerUnreadMarkInteractively(transaction: Transaction, netwo
                     transaction.setMessageHistoryThreadInfo(peerId: peerId, threadId: item.threadId, info: entry)
                 }
                 
-                if peer.isForum {
+                if peer.isForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                     if let inputPeer = apiInputPeer(peer) {
                         let _ = network.request(Api.functions.messages.readDiscussion(peer: inputPeer, msgId: Int32(clamping: item.threadId), readMaxId: messageIndex.id.id)).start()
                     }
-                } else if peer.isMonoForum {
+                } else if peer.isMonoForum && !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                     if let inputPeer = apiInputPeer(peer), let subPeer = transaction.getPeer(PeerId(item.threadId)).flatMap(apiInputPeer) {
                         let _ = network.request(Api.functions.messages.readSavedHistory(parentPeer: inputPeer, peer: subPeer, maxId: messageIndex.id.id)).start()
                     }

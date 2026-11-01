@@ -376,6 +376,15 @@ private func pushPeerReadState(network: Network, postbox: Postbox, stateManager:
 }
 
 func synchronizePeerReadState(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, push: Bool, validate: Bool) -> Signal<Never, PeerReadStateValidationError> {
+    return postbox.transaction { transaction -> Signal<Never, PeerReadStateValidationError> in
+        if wygramSuppressReadSynchronization(transaction: transaction, peerId: peerId) { return .complete() }
+        return synchronizePeerReadStateAllowed(network: network, postbox: postbox, stateManager: stateManager, peerId: peerId, push: push, validate: validate)
+    }
+    |> castError(PeerReadStateValidationError.self)
+    |> switchToLatest
+}
+
+private func synchronizePeerReadStateAllowed(network: Network, postbox: Postbox, stateManager: AccountStateManager, peerId: PeerId, push: Bool, validate: Bool) -> Signal<Never, PeerReadStateValidationError> {
     var signal: Signal<Never, PeerReadStateValidationError> = .complete()
     if push {
         signal = signal

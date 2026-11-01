@@ -253,11 +253,15 @@ func managedReadReactionOrPollVoteActions(postbox: Postbox, network: Network, st
 
 private func synchronizeConsumeMessageContents(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
-        return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
+        let receipt: Signal<Api.messages.AffectedMessages?, NoError>
+        if wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
+            receipt = .single(nil)
+        } else {
+            receipt = network.request(Api.functions.messages.readMessageContents(id: [id.id]))
             |> map(Optional.init)
-            |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
-                return .single(nil)
-            }
+            |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in .single(nil) }
+        }
+        return receipt
             |> mapToSignal { result -> Signal<Void, NoError> in
                 if let result = result {
                     switch result {
@@ -288,10 +292,14 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox
             }
     } else if id.peerId.namespace == Namespaces.Peer.CloudChannel {
         if let peer = transaction.getPeer(id.peerId), let inputChannel = apiInputChannel(peer) {
-            return network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: [id.id]))
-                |> `catch` { _ -> Signal<Api.Bool, NoError> in
-                    return .single(.boolFalse)
-                } |> mapToSignal { result -> Signal<Void, NoError> in
+            let receipt: Signal<Api.Bool, NoError>
+            if wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
+                receipt = .single(.boolFalse)
+            } else {
+                receipt = network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: [id.id]))
+                |> `catch` { _ -> Signal<Api.Bool, NoError> in .single(.boolFalse) }
+            }
+            return receipt |> mapToSignal { result -> Signal<Void, NoError> in
                     return postbox.transaction { transaction -> Void in
                         transaction.setPendingMessageAction(type: .consumeUnseenPersonalMessage, id: id, action: nil)
                         transaction.updateMessage(id, update: { currentMessage in
@@ -322,11 +330,15 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox
 
 private func synchronizeReadMessageReactionsOrPollVotes(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
-        return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
-        |> map(Optional.init)
-        |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
-            return .single(nil)
+        let receipt: Signal<Api.messages.AffectedMessages?, NoError>
+        if wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
+            receipt = .single(nil)
+        } else {
+            receipt = network.request(Api.functions.messages.readMessageContents(id: [id.id]))
+            |> map(Optional.init)
+            |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in .single(nil) }
         }
+        return receipt
         |> mapToSignal { result -> Signal<Void, NoError> in
             if let result = result {
                 switch result {
@@ -365,10 +377,14 @@ private func synchronizeReadMessageReactionsOrPollVotes(transaction: Transaction
         }
     } else if id.peerId.namespace == Namespaces.Peer.CloudChannel {
         if let peer = transaction.getPeer(id.peerId), let inputChannel = apiInputChannel(peer) {
-            return network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: [id.id]))
-            |> `catch` { _ -> Signal<Api.Bool, NoError> in
-                return .single(.boolFalse)
+            let receipt: Signal<Api.Bool, NoError>
+            if wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
+                receipt = .single(.boolFalse)
+            } else {
+                receipt = network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: [id.id]))
+                |> `catch` { _ -> Signal<Api.Bool, NoError> in .single(.boolFalse) }
             }
+            return receipt
             |> mapToSignal { result -> Signal<Void, NoError> in
                 return postbox.transaction { transaction -> Void in
                     transaction.setPendingMessageAction(type: .readReactionOrPollVote, id: id, action: nil)

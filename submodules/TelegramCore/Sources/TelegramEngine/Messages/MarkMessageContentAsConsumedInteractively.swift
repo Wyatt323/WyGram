@@ -26,7 +26,7 @@ public func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox
                                     case let .sequenceBasedLayer(sequenceState):
                                         layer = sequenceState.layerNegotiationState.activeLayer.secretChatLayer
                                 }
-                                if let layer = layer {
+                                if let layer = layer, !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                                     var globallyUniqueIds: [Int64] = []
                                     if let globallyUniqueId = message.globallyUniqueId {
                                         globallyUniqueIds.append(globallyUniqueId)
@@ -72,7 +72,7 @@ public func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox
                                 }
                             }
                             
-                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
+                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId, !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                                 let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
                                 if updatedState != state {
                                     transaction.setPeerChatState(messageId.peerId, state: updatedState)
@@ -103,7 +103,7 @@ public func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox
                                 }
                             }
                             
-                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId {
+                            if let state = state, let layer = layer, let globallyUniqueId = message.globallyUniqueId, !wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
                                 let updatedState = addSecretChatOutgoingOperation(transaction: transaction, peerId: messageId.peerId, operation: .readMessagesContent(layer: layer, actionGloballyUniqueId: Int64.random(in: Int64.min ... Int64.max), globallyUniqueIds: [globallyUniqueId]), state: state)
                                 if updatedState != state {
                                     transaction.setPeerChatState(messageId.peerId, state: updatedState)
@@ -123,7 +123,7 @@ public func _internal_markMessageContentAsConsumedInteractively(postbox: Postbox
                     return .update(StoreMessage(id: currentMessage.id, customStableId: nil, globallyUniqueId: currentMessage.globallyUniqueId, groupingKey: currentMessage.groupingKey, threadId: currentMessage.threadId, timestamp: currentMessage.timestamp, flags: StoreMessageFlags(currentMessage.flags), tags: currentMessage.tags, globalTags: currentMessage.globalTags, localTags: currentMessage.localTags, forwardInfo: storeForwardInfo, authorId: currentMessage.author?.id, text: currentMessage.text, attributes: updatedAttributes, media: currentMessage.media))
                 })
             }
-            // Consumption receipts are queued normally; retain the local picture before
+            // Ghost mode only suppresses remote receipts; retain the local picture before
             // the transaction can publish a countdown (including view-once expiry).
             _ = wygramRetainDisappearingPhoto(transaction: transaction, mediaBox: postbox.mediaBox, messageId: messageId)
         }

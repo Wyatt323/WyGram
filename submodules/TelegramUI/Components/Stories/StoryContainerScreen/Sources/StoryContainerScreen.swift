@@ -2011,7 +2011,7 @@ private final class StoryContainerScreenComponent: Component {
                             theme: environment.theme,
                             strings: environment.strings,
                             peer: component.content.stateValue?.slice?.peer,
-                            isInStealthMode: stealthModeTimeout != nil || SGSimpleSettings.shared.isStealthModeEnabled,
+                            isInStealthMode: stealthModeTimeout != nil,
                             action: { [weak self] in
                                 self?.isDisplayingStoriesWarning = false
                                 self?.state?.updated(transition: .immediate)

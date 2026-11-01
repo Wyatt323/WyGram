@@ -46,3 +46,19 @@ swift_library(
         "//visibility:public",
     ],
 )
+
+filegroup(
+    name = "WyGramGhostProbeSources",
+    srcs = [
+        "Sources/TelegramEngine/Privacy/WyGramGhostMode.swift",
+        "Sources/State/SynchronizePeerReadState.swift",
+        "Sources/State/ManagedLocalInputActivities.swift",
+        "Sources/TelegramEngine/Messages/Stories.swift",
+        "Sources/State/ManagedSynchronizeConsumeMessageContentsOperations.swift",
+        "Sources/State/ManagedSynchronizeViewStoriesOperations.swift",
+        "Sources/State/ManagedAccountPresence.swift",
+        "Sources/ApiUtils/ApiUtils.swift",
+        "Sources/SyncCore/SynchronizeViewStoriesOperation.swift",
+    ],
+    visibility = ["//visibility:public"],
+)

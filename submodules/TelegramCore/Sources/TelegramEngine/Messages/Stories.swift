@@ -2073,6 +2073,7 @@ func _internal_deleteStories(account: Account, peerId: PeerId, ids: [Int32]) -> 
 func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPinned: Bool) -> Signal<Never, NoError> {
     if asPinned {
         return account.postbox.transaction { transaction -> Api.InputPeer? in
+            if wygramGhostModeSettings(transaction: transaction).hideStoryViews { return nil }
             return transaction.getPeer(peerId).flatMap(apiInputPeer)
         }
         |> mapToSignal { inputPeer -> Signal<Never, NoError> in
@@ -2102,7 +2103,9 @@ func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPi
             
             #if DEBUG && false
             #else
-            _internal_addSynchronizeViewStoriesOperation(peerId: peerId, storyId: id, transaction: transaction)
+            if !wygramGhostModeSettings(transaction: transaction).hideStoryViews {
+                _internal_addSynchronizeViewStoriesOperation(peerId: peerId, storyId: id, transaction: transaction)
+            }
             #endif
             
             return transaction.getPeer(peerId).flatMap(apiInputUser)

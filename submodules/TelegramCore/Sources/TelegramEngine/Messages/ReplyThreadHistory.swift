@@ -333,9 +333,9 @@ private class ReplyThreadHistoryContextImpl {
 
         let account = self.account
         
-        let _ = (self.account.postbox.transaction { transaction -> (Api.InputPeer?, Api.InputPeer?, MessageId?, Int?) in
+        let _ = (self.account.postbox.transaction { transaction -> (Api.InputPeer?, Api.InputPeer?, MessageId?, Int?, Bool) in
             guard let peer = transaction.getPeer(peerId) else {
-                return (nil, nil, nil, nil)
+                return (nil, nil, nil, nil, true)
             }
             
             var markMainAsRead = false
@@ -434,9 +434,9 @@ private class ReplyThreadHistoryContextImpl {
             let readCount = transaction.getThreadMessageCount(peerId: peerId, threadId: threadId, namespace: Namespaces.Message.Cloud, fromIdExclusive: fromIdExclusive, toIndex: toIndex)
             let topMessageId = transaction.getMessagesWithThreadId(peerId: peerId, namespace: Namespaces.Message.Cloud, threadId: threadId, from: MessageIndex.upperBound(peerId: peerId, namespace: Namespaces.Message.Cloud), includeFrom: false, to: MessageIndex.lowerBound(peerId: peerId, namespace: Namespaces.Message.Cloud), limit: 1).first?.id
             
-            return (inputPeer, subPeerId, topMessageId, readCount)
+            return (inputPeer, subPeerId, topMessageId, readCount, wygramGhostModeSettings(transaction: transaction).hideReadReceipts)
         }
-        |> deliverOnMainQueue).start(next: { [weak self] inputPeer, subPeerId, topMessageId, readCount in
+        |> deliverOnMainQueue).start(next: { [weak self] inputPeer, subPeerId, topMessageId, readCount, hideReadReceipts in
             guard let strongSelf = self else {
                 return
             }
@@ -476,7 +476,9 @@ private class ReplyThreadHistoryContextImpl {
                 }
             }
 
-            if let subPeerId {
+            if hideReadReceipts {
+                strongSelf.readDisposable.set(nil)
+            } else if let subPeerId {
                 let signal = strongSelf.account.network.request(Api.functions.messages.readSavedHistory(parentPeer: inputPeer, peer: subPeerId, maxId: messageIndex.id.id))
                 |> `catch` { _ -> Signal<Api.Bool, NoError> in
                     return .single(.boolFalse)

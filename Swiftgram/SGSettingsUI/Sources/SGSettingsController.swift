@@ -3,6 +3,7 @@ import SGLogging
 import SGSimpleSettings
 import SGStrings
 import SGAPIToken
+import SGProUI
 
 import SGItemListUI
 import Foundation
@@ -27,6 +28,8 @@ import UndoUI
 
 private enum SGControllerSection: Int32, SGItemListSection {
     case search
+    case features
+    case notifications
     case trending
     case content
     case tabs
@@ -46,6 +49,7 @@ private enum SGControllerSection: Int32, SGItemListSection {
 }
 
 private enum SGBoolSetting: String {
+    case inputToolbar
     case hidePhoneInSettings
     case showTabNames
     case showContactsTab
@@ -60,7 +64,6 @@ private enum SGBoolSetting: String {
     case sendWithReturnKey
     case rememberLastFolder
     case sendLargePhotos
-    case storyStealthMode
     case disableSwipeToRecordStory
     case disableDeleteChatSwipeOption
     case quickTranslateButton
@@ -109,6 +112,8 @@ private enum SGBoolSetting: String {
 }
 
 private enum SGOneFromManySetting: String {
+    case pinnedMessageNotifications
+    case mentionsAndRepliesNotifications
     case nyStyle
     case bottomTabStyle
     case downloadSpeedBoost
@@ -125,6 +130,9 @@ private enum SGSliderSetting: String {
 }
 
 private enum SGDisclosureLink: String {
+    case sessionBackupManager
+    case messageFilter
+    case wygramGhostMode
     case wygramDirectShare
     case wygramPushStatus
     case wygramAppUpdate
@@ -154,10 +162,20 @@ private func SGControllerEntries(presentationData: PresentationData, callListSet
     let id = SGItemListCounter()
     
     entries.append(.searchInput(id: id.count, section: .search, title: NSAttributedString(string: "🔍"), text: state.searchQuery ?? "", placeholder: strings.Common_Search))
+    entries.append(.disclosure(id: id.count, section: .search, link: .wygramGhostMode, text: lang.hasPrefix("zh") ? "幽灵模式" : "Ghost Mode"))
     entries.append(.disclosure(id: id.count, section: .search, link: .wygramDirectShare, text: lang.hasPrefix("zh") ? "系统分享（直接选择收件人）" : "System Sharing (Choose Recipients)"))
     entries.append(.disclosure(id: id.count, section: .search, link: .wygramMessageHistory, text: lang.hasPrefix("zh") ? "消息记录（防撤回 / 防编辑 / 图片保留）" : "Message History (Deleted / Edited / Photos)"))
     entries.append(.disclosure(id: id.count, section: .search, link: .wygramAppUpdate, text: lang.hasPrefix("zh") ? "WyGram 在线更新" : "WyGram Updates"))
-    entries.append(.disclosure(id: id.count, section: .search, link: .wygramPushStatus, text: lang.hasPrefix("zh") ? "消息通知状态" : "Message Notification Status"))
+
+    entries.append(.header(id: id.count, section: .features, text: lang.hasPrefix("zh") ? "实用功能" : "Utilities", badge: nil))
+    entries.append(.disclosure(id: id.count, section: .features, link: .sessionBackupManager, text: "SessionBackup.Title".i18n(lang)))
+    entries.append(.disclosure(id: id.count, section: .features, link: .messageFilter, text: "MessageFilter.Title".i18n(lang)))
+    entries.append(.toggle(id: id.count, section: .features, settingName: .inputToolbar, value: SGSimpleSettings.shared.inputToolbar, text: "InputToolbar.Title".i18n(lang), enabled: true))
+
+    entries.append(.header(id: id.count, section: .notifications, text: strings.Notifications_Title.uppercased(), badge: nil))
+    entries.append(.oneFromManySelector(id: id.count, section: .notifications, settingName: .pinnedMessageNotifications, text: "Notifications.PinnedMessages.Title".i18n(lang), value: "Notifications.PinnedMessages.value.\(SGSimpleSettings.shared.pinnedMessageNotifications)".i18n(lang), enabled: true))
+    entries.append(.oneFromManySelector(id: id.count, section: .notifications, settingName: .mentionsAndRepliesNotifications, text: "Notifications.MentionsAndReplies.Title".i18n(lang), value: "Notifications.MentionsAndReplies.value.\(SGSimpleSettings.shared.mentionsAndRepliesNotifications)".i18n(lang), enabled: true))
+    entries.append(.disclosure(id: id.count, section: .notifications, link: .wygramPushStatus, text: lang.hasPrefix("zh") ? "消息通知状态" : "Message Notification Status"))
     
     
     if SGSimpleSettings.shared.canUseNY {
@@ -217,12 +235,6 @@ private func SGControllerEntries(presentationData: PresentationData, callListSet
     entries.append(.toggle(id: id.count, section: .stories, settingName: .disableSwipeToRecordStory, value: SGSimpleSettings.shared.disableSwipeToRecordStory, text: i18n("Settings.Stories.DisableSwipeToRecord", lang), enabled: true))
     entries.append(.toggle(id: id.count, section: .stories, settingName: .warnOnStoriesOpen, value: SGSimpleSettings.shared.warnOnStoriesOpen, text: i18n("Settings.Stories.WarnBeforeView", lang), enabled: true))
     entries.append(.toggle(id: id.count, section: .stories, settingName: .showRepostToStory, value: SGSimpleSettings.shared.showRepostToStoryV2, text: strings.Share_RepostToStory.replacingOccurrences(of: "\n", with: " "), enabled: true))
-    if SGSimpleSettings.shared.canUseStealthMode {
-        entries.append(.toggle(id: id.count, section: .stories, settingName: .storyStealthMode, value: SGSimpleSettings.shared.storyStealthMode, text: strings.Story_StealthMode_Title, enabled: true))
-        entries.append(.notice(id: id.count, section: .stories, text: strings.Story_StealthMode_ControlText))
-    } else {
-        id.increment(2)
-    }
 
     
     entries.append(.header(id: id.count, section: .translation, text: strings.Localization_TranslateMessages.uppercased(), badge: nil))
@@ -372,6 +384,8 @@ public func sgSettingsController(context: AccountContext/*, focusOnItemTag: Int?
           }
         },*/ setBoolValue: { setting, value in
         switch setting {
+        case .inputToolbar:
+            SGSimpleSettings.shared.inputToolbar = value
         case .hidePhoneInSettings:
             SGSimpleSettings.shared.hidePhoneInSettings = value
             askForRestart?()
@@ -418,8 +432,6 @@ public func sgSettingsController(context: AccountContext/*, focusOnItemTag: Int?
             SGSimpleSettings.shared.rememberLastFolder = value
         case .sendLargePhotos:
             SGSimpleSettings.shared.sendLargePhotos = value
-        case .storyStealthMode:
-            SGSimpleSettings.shared.storyStealthMode = value
         case .disableSwipeToRecordStory:
             SGSimpleSettings.shared.disableSwipeToRecordStory = value
         case .quickTranslateButton:
@@ -555,6 +567,24 @@ public func sgSettingsController(context: AccountContext/*, focusOnItemTag: Int?
         var items: [ActionSheetItem] = []
         
         switch (setting) {
+            case .pinnedMessageNotifications:
+                for value in SGSimpleSettings.PinnedMessageNotificationsSettings.allCases {
+                    items.append(ActionSheetButtonItem(title: "Notifications.PinnedMessages.value.\(value.rawValue)".i18n(presentationData.strings.baseLanguageCode), color: .accent, action: { [weak actionSheet] in
+                        actionSheet?.dismissAnimated()
+                        SGSimpleSettings.shared.pinnedMessageNotifications = value.rawValue
+                        SGSimpleSettings.shared.synchronizeShared()
+                        simplePromise.set(true)
+                    }))
+                }
+            case .mentionsAndRepliesNotifications:
+                for value in SGSimpleSettings.MentionsAndRepliesNotificationsSettings.allCases {
+                    items.append(ActionSheetButtonItem(title: "Notifications.MentionsAndReplies.value.\(value.rawValue)".i18n(presentationData.strings.baseLanguageCode), color: .accent, action: { [weak actionSheet] in
+                        actionSheet?.dismissAnimated()
+                        SGSimpleSettings.shared.mentionsAndRepliesNotifications = value.rawValue
+                        SGSimpleSettings.shared.synchronizeShared()
+                        simplePromise.set(true)
+                    }))
+                }
             case .downloadSpeedBoost:
                 let setAction: (String) -> Void = { value in
                     SGSimpleSettings.shared.downloadSpeedBoost = value
@@ -690,6 +720,12 @@ public func sgSettingsController(context: AccountContext/*, focusOnItemTag: Int?
         presentControllerImpl?(actionSheet, ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
     }, openDisclosureLink: { link in
         switch (link) {
+            case .sessionBackupManager:
+                pushControllerImpl?(sgSessionBackupManagerController(context: context, presentationData: context.sharedContext.currentPresentationData.with { $0 }))
+            case .messageFilter:
+                pushControllerImpl?(sgMessageFilterController(presentationData: context.sharedContext.currentPresentationData.with { $0 }))
+            case .wygramGhostMode:
+                pushControllerImpl?(wygramGhostModeController(context: context))
             case .wygramDirectShare:
                 pushControllerImpl?(wygramDirectShareController(context: context))
             case .wygramAppUpdate:

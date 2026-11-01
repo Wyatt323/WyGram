@@ -1,10 +1,12 @@
-# WyGram 1.1.4
+# WyGram 1.1.5
 
 WyGram is an iOS Telegram client based on [Swiftgram/Telegram-iOS](https://github.com/Swiftgram/Telegram-iOS). Its fixed application icon, internal branding and top badge use the artwork supplied for WyGram.
 
 The Swiftgram client-side Pro settings are available without a purchase in this fork. Telegram Premium and any feature enforced by Telegram or Swiftgram servers are outside this change. See [WYGRAM.md](WYGRAM.md) for build requirements and testing notes.
 
-Download the current IPA from [Releases](https://github.com/Wyatt323/WyGram/releases/latest). Version 1.1.4 (26) adds chat-list loading feedback while local data resumes after a long background interval and while a selected chat becomes ready. Waiting for network, connecting and syncing keep their own status messages. See [background loading](docs/wygram-background-loading.md) for behavior and validation limits. Repeat Message and Forward to This Chat remain adjacent actions with their existing attribution behavior. On-device signed updates are available from 1.0.12: install the first updater-enabled version manually with LCSign, then configure the same certificate and matching profiles on the phone. See [online updates](docs/wygram-online-updates.md).
+Download the current IPA from [Releases](https://github.com/Wyatt323/WyGram/releases/latest). Version 1.1.5 (27) adds [Ghost Mode](docs/wygram-ghost-mode.md), with independent controls for story views, online presence, input activity and read receipts. These controls affect this installation; sending messages and other devices can still reveal online status, and later cumulative reading may mark earlier messages read.
+
+The main settings group now contains only WyGram and WyGram Updates. Former Features controls are embedded directly in WyGram, with notification diagnostics in its Notifications section. Existing settings are preserved; see [consolidated settings](docs/wygram-settings.md). [Chat-list loading feedback](docs/wygram-background-loading.md), Repeat Message and Forward to This Chat retain their existing behavior. For on-device signed updates and first-install requirements, see [online updates](docs/wygram-online-updates.md).
 
 For the current local build and release recipe, see [Build WyGram](docs/wygram-build.md). The instructions below retain the upstream compilation guide.
 

@@ -197,41 +197,11 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
         }
     }
     
-    // let locale = presentationData.strings.baseLanguageCode
-    // MARK: Swiftgram
-    let hasNewSGFeatures = {
-        return false
-    }
-    let swiftgramLabel: PeerInfoScreenDisclosureItem.Label
-    if hasNewSGFeatures() {
-        swiftgramLabel = .titleBadge(presentationData.strings.Settings_New, presentationData.theme.list.itemAccentColor)
-    } else {
-        swiftgramLabel = .none
-    }
-
-    let hasNewSGProFeatures = {
-        return false
-    }
-    let swiftgramProLabel: PeerInfoScreenDisclosureItem.Label
-    if hasNewSGProFeatures() {
-        swiftgramProLabel = .titleBadge(presentationData.strings.Settings_New, presentationData.theme.list.itemAccentColor)
-    } else {
-        swiftgramProLabel = .none
-    }
-    
-    
     let sgWebSettings = context.currentAppConfiguration.with({ $0 }).sgWebSettings
-    if sgWebSettings.global.paymentsEnabled || context.sharedContext.immediateSGStatus.status > 1 {
-        items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 0, label: swiftgramProLabel, text: "WyGram Features", icon: PresentationResourcesSettings.swiftgramPro, action: {
-            interaction.openSettings(.swiftgramPro)
-        }))
-    }
-    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 1, label: swiftgramLabel, text: "WyGram", icon: PresentationResourcesSettings.swiftgram, action: {
-        interaction.openSettings(.swiftgram)
-    }))
 
-    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 2, label: .none, text: presentationData.strings.baseLanguageCode.hasPrefix("zh") ? "消息通知状态" : "Notification Status", icon: PresentationResourcesSettings.notifications, action: {
-        interaction.openSettings(.wygramPushStatus)
+    // WyGram customization lives in one settings page; updates stay one tap away.
+    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 1, label: .none, text: "WyGram", icon: PresentationResourcesSettings.swiftgram, action: {
+        interaction.openSettings(.swiftgram)
     }))
 
     items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 3, label: .none, text: presentationData.strings.baseLanguageCode.hasPrefix("zh") ? "WyGram 在线更新" : "WyGram Updates", icon: PresentationResourcesSettings.swiftgram, action: {

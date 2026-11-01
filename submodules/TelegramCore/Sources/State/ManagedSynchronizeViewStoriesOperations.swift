@@ -87,6 +87,7 @@ func managedSynchronizeViewStoriesOperations(postbox: Postbox, network: Network,
                 let signal = withTakenOperation(postbox: postbox, peerId: entry.peerId, tagLocalIndex: entry.tagLocalIndex, { transaction, entry -> Signal<Void, NoError> in
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizeViewStoriesOperation {
+                            if wygramGhostModeSettings(transaction: transaction).hideStoryViews { return .complete() }
                             if let peer = transaction.getPeer(entry.peerId) {
                                 return pushStoriesAreSeen(postbox: postbox, network: network, stateManager: stateManager, peer: peer, operation: operation)
                             } else {

@@ -16,6 +16,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//Swiftgram/SGProUI:SGProUI",
         "//Swiftgram/WGAppUpdate",
         "//Swiftgram/SGAppGroupIdentifier:SGAppGroupIdentifier",
         "//Swiftgram/SGItemListUI:SGItemListUI",
@@ -43,4 +44,10 @@ swift_library(
     visibility = [
         "//visibility:public",
     ],
+)
+
+filegroup(
+    name = "WyGramGhostSettingsSource",
+    srcs = ["Sources/WyGramGhostModeController.swift", "Sources/WyGramSettingsLayout.swift"],
+    visibility = ["//visibility:public"],
 )

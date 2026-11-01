@@ -17,6 +17,15 @@ func _internal_markAllChatsAsRead(postbox: Postbox, network: Network, stateManag
         }
         
         return postbox.transaction { transaction -> Signal<Void, NoError> in
+            if wygramGhostModeSettings(transaction: transaction).hideReadReceipts {
+                for dialog in result {
+                    if case let .dialogPeer(data) = dialog, let index = transaction.getTopPeerMessageIndex(peerId: data.peer.peerId) {
+                        _ = transaction.applyInteractiveReadMaxIndex(index)
+                        _ = wygramSuppressReadSynchronization(transaction: transaction, peerId: index.id.peerId)
+                    }
+                }
+                return .complete()
+            }
             var signals: [Signal<Void, NoError>] = []
             for peer in result {
                 switch peer {
